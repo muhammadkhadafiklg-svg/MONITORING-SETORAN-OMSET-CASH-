@@ -506,7 +506,7 @@ else:
                         chosen_model = m
                         break
                 
-                # 3. KIRIM PERTANYAAN
+                # 3. KIRIM PERTANYAAN (dengan max_tokens diturunkan ke 512 agar tidak error)
                 chat_completion = client.chat.completions.create(
                     messages=[
                         {
@@ -523,7 +523,7 @@ else:
                         }
                     ],
                     model=chosen_model,
-                    max_tokens=1000,
+                    max_tokens=512,  # <--- INI SUDAH DIUBAH MENJADI 512
                 )
             
             jawaban = chat_completion.choices[0].message.content
