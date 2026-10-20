@@ -1,4 +1,5 @@
 import html
+import re
 from datetime import date, timedelta
 from urllib.parse import quote
 
@@ -103,33 +104,17 @@ table.pro tbody tr:hover td { background: #EEF3FA; }
 table.pro td.strong { font-weight: 700; color: #0B1F3A; }
 table.pro tr.total td { background: #EAEFF7 !important; font-weight: 700; color: #0B1F3A; border-top: 2px solid #12335E; }
 
-/* Buttons */
-.stButton > button, .stDownloadButton > button, div[data-testid="stFormSubmitButton"] > button {
-  background: #FFFFFF; color: #12335E; border: 1px solid #C9D3E3; border-radius: 8px;
-  font-weight: 600; font-size: .85rem; padding: .45rem 1rem; transition: all .15s;
-}
-.stButton > button:hover, .stDownloadButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover {
-  background: #12335E; color: #FFFFFF; border-color: #12335E;
-}
-div[data-testid="stFormSubmitButton"] > button { background: #12335E; color: #FFFFFF; border-color: #12335E; }
-
-/* Tabs */
-button[data-baseweb="tab"] { font-weight: 600; color: #5B6B82; }
-button[data-baseweb="tab"][aria-selected="true"] { color: #0B1F3A; }
-div[data-baseweb="tab-highlight"] { background-color: #12335E !important; }
-
 /* Assistant */
 .ai-card { background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 14px; padding: 20px 24px; margin-top: 8px;
   box-shadow: 0 1px 6px rgba(11,31,58,.04); }
 .ai-card .t { color: #0B1F3A; font-weight: 700; font-size: 1.05rem; }
 .ai-card .s { color: #5B6B82; font-size: .85rem; margin-bottom: 10px; }
 .ai-answer { background: #F4F7FC; border-left: 4px solid #12335E; border-radius: 8px; padding: 14px 18px;
-  color: #1F2D3D; margin-top: 12px; }
+  color: #1F2D3D; margin-top: 12px; line-height: 1.5; }
 .model-info { color: #7B8AA0; font-size: 0.75rem; text-align: right; margin-top: 4px; }
 
 /* Footer */
-.footer { text-align: center; color: #7B8AA0; font-size: .8rem; margin-top: 36px; padding-top: 16px;
-  border-top: 1px solid #DCE3EE; }
+.footer { text-align: center; color: #7B8AA0; font-size: .8rem; margin-top: 36px; padding-top: 16px; border-top: 1px solid #DCE3EE; }
 .footer b { color: #12335E; }
 </style>
 """
@@ -163,10 +148,7 @@ def get_secret(name: str, default=None):
         return default
 
 def sheet_url(name: str) -> str:
-    return (
-        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
-        f"?tqx=out:csv&sheet={quote(name)}"
-    )
+    return f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={quote(name)}"
 
 def html_table(headers, rows, num_cols=(), strong_cols=(), footer=None) -> str:
     th = "".join(f'<th class="{"num" if i in num_cols else ""}">{esc(h)}</th>' for i, h in enumerate(headers))
@@ -217,16 +199,7 @@ def load_store_names() -> dict:
         cols = list(m.columns)
         low = {c: c.lower() for c in cols}
 
-        kode = MASTER_COL_KODE
-        if kode is None:
-            for key in ("kode", "code", "id store", "store id", "store"):
-                if key in low: 
-                    kode = key; break
-                # Fallback search
-                hit = [c for c in cols if key in low[c] and "nama" not in low[c] and "name" not in low[c]]
-                if hit: kode = hit[0]; break
-            kode = kode or cols[0]
-
+        kode = MASTER_COL_KODE or cols[0]
         nama = MASTER_COL_NAMA
         if nama is None:
             hit = [c for c in cols if "nama" in low[c] or "name" in low[c]]
@@ -258,8 +231,7 @@ st.markdown(
       </div>
       <div class="stamp">Data diperbarui otomatis<br><b>{tgl_id(date.today())}</b></div>
     </div>
-    """,
-    unsafe_allow_html=True,
+    """, unsafe_allow_html=True
 )
 
 try:
@@ -295,7 +267,6 @@ if mode.startswith("Otomatis"):
     if not pickup_days:
         st.warning("Pilih minimal satu hari pick up pada menu pengaturan.")
         st.stop()
-
     dates = pickup_dates(pickup_days)
     idx_latest = len(dates) - 1
 
@@ -339,23 +310,58 @@ if d.empty:
     st.stop()
 
 # =====================================================
-# PERHITUNGAN & SELISIH
+# SMART PARSER: MENGHITUNG SELISIH AKTUAL
 # =====================================================
-d["Verified"] = d["Total"].where(d[COL_STATUS_FIN].str.lower() == "verified", 0)
+def parse_finance_status(row):
+    """Membaca catatan finance untuk mencari tahu nominal yg diverifikasi dan selisihnya."""
+    val_str = str(row[COL_STATUS_FIN]).lower().strip()
+    total = float(row["Total"]) if pd.notnull(row["Total"]) else 0.0
+    
+    # 1. Jika diketik Verified/OK/Sesuai
+    if val_str in ["verified", "ok", "v", "sesuai", "yes", "ya", "true"]:
+        return pd.Series([total, 0.0, 0.0]) # [Verified_Nom, Selisih, Belum_Verif]
+        
+    # 2. Jika kosong / belum diverifikasi
+    if val_str in ["", "nan", "belum", "pending", "false", "none"]:
+        return pd.Series([0.0, 0.0, total])
+        
+    # 3. Jika Finance nulis keterangan "Lebih 100" / "Lebih setor 100"
+    if "lebih" in val_str:
+        nums = re.findall(r'\d+', val_str.replace('.', '').replace(',', ''))
+        if nums:
+            selisih = float(nums[0])
+            return pd.Series([total + selisih, selisih, 0.0])
+            
+    # 4. Jika Finance nulis "Kurang 100"
+    if "kurang" in val_str:
+        nums = re.findall(r'\d+', val_str.replace('.', '').replace(',', ''))
+        if nums:
+            selisih = -float(nums[0])
+            return pd.Series([total + selisih, selisih, 0.0])
+            
+    # 5. Jika Finance ngetik nominal transfer langsung (contoh: 149900)
+    nums = re.findall(r'\d+', val_str.replace('.', '').replace(',', ''))
+    if nums and len(nums[0]) >= 3: # Anggap nominal transfer minimal 3 digit
+        verif_nom = float(nums[0])
+        selisih = verif_nom - total
+        return pd.Series([verif_nom, selisih, 0.0])
+        
+    # Default jika tidak dimengerti = Belum Verif
+    return pd.Series([0.0, 0.0, total])
 
+# Terapkan perhitungan cerdas
+d[['Verified_Nom', 'Selisih_Nom', 'Belum_Verif_Nom']] = d.apply(parse_finance_status, axis=1)
+
+# Rekap Data
 ringkas = (
     d.groupby(COL_STORE, as_index=False)
     .agg(
-        Pagi=(COL_PAGI, "sum"), Siang=(COL_SIANG, "sum"),
-        Total=("Total", "sum"), Verified=("Verified", "sum"),
-        Hari_Terisi=(COL_TANGGAL, "nunique")
+        Pagi=(COL_PAGI, "sum"), Siang=(COL_SIANG, "sum"), Total=("Total", "sum"), 
+        Verified=("Verified_Nom", "sum"), Selisih_Aktual=("Selisih_Nom", "sum"),
+        Belum_Verified=("Belum_Verif_Nom", "sum"), Hari_Terisi=(COL_TANGGAL, "nunique")
     )
-    .sort_values("Total", ascending=False)
-    .reset_index(drop=True)
+    .sort_values("Total", ascending=False).reset_index(drop=True)
 )
-
-# Menghitung Selisih (Total Setoran - Yang sudah di Verifikasi Finance)
-ringkas["Selisih"] = ringkas["Total"] - ringkas["Verified"]
 jumlah_hari = (end - start).days + 1
 ringkas["Hari Kurang"] = (jumlah_hari - ringkas["Hari_Terisi"]).clip(lower=0)
 
@@ -363,7 +369,8 @@ total_pickup = ringkas["Total"].sum()
 total_pagi = ringkas["Pagi"].sum()
 total_siang = ringkas["Siang"].sum()
 total_verified = ringkas["Verified"].sum()
-total_selisih = ringkas["Selisih"].sum()
+total_belum = ringkas["Belum_Verified"].sum()
+total_selisih = ringkas["Selisih_Aktual"].sum()
 
 # =====================================================
 # MENU UTAMA: TOTAL NOMINAL PICK UP
@@ -378,11 +385,10 @@ st.markdown(
         <b>{len(ringkas)}</b> toko</div>
       <div class="split">
         {badge("Terverifikasi Finance: " + rp(total_verified), "b-ok")}
-        {badge("Selisih / Belum Verifikasi: " + rp(total_selisih), "b-wait" if total_selisih else "b-neutral")}
+        {badge("Menunggu Verifikasi: " + rp(total_belum), "b-wait" if total_belum else "b-neutral")}
       </div>
     </div>
-    """,
-    unsafe_allow_html=True,
+    """, unsafe_allow_html=True
 )
 
 k1, k2, k3, k4 = st.columns(4)
@@ -393,7 +399,7 @@ for col, label, value in [
     col.markdown(f'<div class="kpi"><div class="k">{label}</div><div class="v">{value}</div></div>', unsafe_allow_html=True)
 
 # =====================================================
-# RINCIAN (DITAMBAHKAN KOLOM TERVERIFIKASI & SELISIH)
+# RINCIAN (DENGAN TEKS SELISIH KHUSUS)
 # =====================================================
 st.markdown('<div class="section-title">Rincian</div>', unsafe_allow_html=True)
 tab_toko, tab_hari, tab_drop = st.tabs(["Per Toko", "Per Hari", "Titipan (Drop)"])
@@ -403,51 +409,60 @@ with tab_toko:
     for i, r in ringkas.iterrows():
         status = ""
         if r["Hari Kurang"] > 0: status += badge(f"Kurang {int(r['Hari Kurang'])} hari", "b-miss") + " "
-        if r["Selisih"] > 0: status += badge("Ada Selisih", "b-wait")
-        elif r["Hari Kurang"] == 0: status += badge("Lengkap & Sesuai", "b-ok")
+        if r["Belum_Verified"] > 0: status += badge("Menunggu Verifikasi", "b-wait") + " "
         
+        # Format Teks Selisih sesuai permintaan ("Lebih Setor Rp 100")
+        selisih_val = r["Selisih_Aktual"]
+        if selisih_val > 0:
+            teks_selisih = f"Lebih Setor Rp {num(selisih_val)}"
+            status += badge("Lebih Setor", "b-wait")
+        elif selisih_val < 0:
+            teks_selisih = f"Kurang Setor Rp {num(abs(selisih_val))}"
+            status += badge("Kurang Setor", "b-miss")
+        else:
+            if r["Belum_Verified"] > 0:
+                teks_selisih = "-"
+            else:
+                teks_selisih = "Sesuai"
+                
+        # Lencana jika benar-benar bersih
+        if r["Hari Kurang"] == 0 and r["Belum_Verified"] == 0 and selisih_val == 0:
+            status += badge("Lengkap & Sesuai", "b-ok")
+            
         rows.append([
-            i + 1, 
-            esc(r[COL_STORE]), 
-            esc(nama_store(r[COL_STORE])), 
-            num(r["Pagi"]), 
-            num(r["Siang"]), 
-            num(r["Total"]), 
-            num(r["Verified"]),  # <--- Kolom Baru
-            num(r["Selisih"]),   # <--- Kolom Baru (Selisih)
-            status
+            i + 1, esc(r[COL_STORE]), esc(nama_store(r[COL_STORE])), 
+            num(r["Pagi"]), num(r["Siang"]), num(r["Total"]), num(r["Verified"]), 
+            teks_selisih, status
         ])
         
+    teks_selisih_total = ""
+    if total_selisih > 0: teks_selisih_total = f"Lebih Rp {num(total_selisih)}"
+    elif total_selisih < 0: teks_selisih_total = f"Kurang Rp {num(abs(total_selisih))}"
+    else: teks_selisih_total = "Sesuai"
+
     st.markdown(
         html_table(
             ["No", "Kode", "Nama Store", "Setoran Pagi", "Setoran Siang", "Total Pick Up", "Terverifikasi", "Selisih", "Status"],
-            rows, 
-            num_cols=(3, 4, 5, 6, 7),  # Kolom angka rata kanan
-            strong_cols=(2, 5, 7),     # Kolom cetak tebal (Nama Store, Total Pick Up, dan Selisih)
-            footer=["", "", "TOTAL", num(total_pagi), num(total_siang), num(total_pickup), num(total_verified), num(total_selisih), ""]
+            rows, num_cols=(3, 4, 5, 6, 7), strong_cols=(2, 5, 7), 
+            footer=["", "", "TOTAL", num(total_pagi), num(total_siang), num(total_pickup), num(total_verified), teks_selisih_total, ""]
         ), unsafe_allow_html=True
     )
     
-    # Tombol Unduh CSV
     exp = ringkas.copy()
     exp.insert(1, "Nama Store", exp[COL_STORE].map(nama_store))
-    st.download_button(
-        "Unduh rincian (CSV)",
-        exp.to_csv(index=False).encode("utf-8"),
-        file_name=f"pickup_{start}_{end}.csv",
-        mime="text/csv",
-    )
+    st.download_button("Unduh rincian (CSV)", exp.to_csv(index=False).encode("utf-8"), file_name=f"pickup_{start}_{end}.csv", mime="text/csv")
 
+# Tab Harian (Tetap seperti aslinya)
 harian = d.groupby([COL_TANGGAL, COL_STORE], as_index=False).agg(Pagi=(COL_PAGI, "sum"), Siang=(COL_SIANG, "sum"), Total=("Total", "sum"), Status=(COL_STATUS_FIN, "first")).sort_values([COL_TANGGAL, COL_STORE])
-
 with tab_hari:
     rows = []
     for _, r in harian.iterrows():
         st_fin = r["Status"].lower()
-        kind = "b-ok" if st_fin == "verified" else "b-wait"
+        kind = "b-ok" if st_fin in ["verified", "ok", "v", "sesuai", "yes"] else ("b-miss" if "kurang" in st_fin else "b-wait")
         rows.append([esc(f"{HARI[r[COL_TANGGAL].weekday()]}, {r[COL_TANGGAL]:%d-%m-%Y}"), esc(r[COL_STORE]), esc(nama_store(r[COL_STORE])), num(r["Pagi"]), num(r["Siang"]), num(r["Total"]), badge(r["Status"] or "Menunggu", kind)])
     st.markdown(html_table(["Tanggal", "Kode", "Nama Store", "Setoran Pagi", "Setoran Siang", "Total", "Status Finance"], rows, num_cols=(3, 4, 5), strong_cols=(2,)), unsafe_allow_html=True)
 
+# Tab Drop
 with tab_drop:
     if drops.empty:
         st.info("Tidak ada titipan (Drop) pada periode ini.")
@@ -482,41 +497,29 @@ else:
 
         ringkas_ai = ringkas.copy()
         ringkas_ai.insert(1, "Nama Store", ringkas_ai[COL_STORE].map(nama_store))
-        harian_ai = harian.copy()
-        harian_ai["Nama Store"] = harian_ai[COL_STORE].map(nama_store)
         konteks = (
-            f"Periode: {start} s/d {end}. Total pick up: {rp(total_pickup)}. Selisih: {rp(total_selisih)}\n"
+            f"Periode: {start} s/d {end}. Total pick up: {rp(total_pickup)}. "
+            f"Terverifikasi: {rp(total_verified)}. Belum diverifikasi: {rp(total_belum)}. "
+            f"Total Selisih Keseluruhan: {rp(total_selisih)}\n\n"
             "RINGKASAN PER TOKO (CSV):\n" + ringkas_ai.head(100).to_csv(index=False)
-            + "\nRINCIAN PER HARI (CSV):\n" + harian_ai.head(300).to_csv(index=False)
         )
         
         try:
             client = groq.Groq(api_key=get_secret("GROQ_API_KEY"))
-            
             with st.spinner("Mencari AI yang aktif dan menganalisa..."):
-                # 1. AMBIL DAFTAR MODEL AKTIF DARI GROQ
                 models_data = client.models.list().data
-                
-                # 2. FILTER: Buang model Sensor(Guard), Audio(Whisper), Gambar(Vision/Llava)
                 kata_terlarang = ["whisper", "guard", "vision", "embed", "llava"]
-                
-                model_chat_valid = [
-                    m.id for m in models_data 
-                    if not any(b in m.id.lower() for b in kata_terlarang)
-                ]
+                model_chat_valid = [m.id for m in models_data if not any(b in m.id.lower() for b in kata_terlarang)]
                 
                 if not model_chat_valid:
                     st.error("API Key Groq Anda tidak memiliki akses ke model teks/chat manapun.")
                     st.stop()
                 
-                # 3. PILIH MODEL: Prioritaskan Llama, Gemma, atau Mixtral
-                chosen_model = model_chat_valid[0] # Default jika tidak ada yang spesifik
+                chosen_model = model_chat_valid[0]
                 for m in model_chat_valid:
                     if "llama" in m.lower() or "gemma" in m.lower() or "mixtral" in m.lower(): 
-                        chosen_model = m
-                        break
+                        chosen_model = m; break
                 
-                # 4. KIRIM PERTANYAAN
                 chat_completion = client.chat.completions.create(
                     messages=[
                         {
@@ -524,7 +527,7 @@ else:
                             "content": (
                                 "Anda adalah Assisten M Khadafi, asisten analisa setoran omset toko. "
                                 "Jawab dalam Bahasa Indonesia, ringkas, profesional, hanya berdasarkan data yang diberikan. "
-                                "Sebut nama store bersama kodenya bila tersedia. Jika data tidak cukup, katakan dengan jelas."
+                                "Jika ditanya selisih, sebutkan apakah itu Lebih Setor atau Kurang Setor."
                             )
                         },
                         {
@@ -532,8 +535,7 @@ else:
                             "content": f"{konteks}\n\nPertanyaan: {tanya.strip()}",
                         }
                     ],
-                    model=chosen_model,
-                    max_tokens=512,
+                    model=chosen_model, max_tokens=512,
                 )
             
             jawaban = chat_completion.choices[0].message.content
