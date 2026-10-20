@@ -27,23 +27,18 @@ COL_SIANG = "Setoran Siang"
 COL_STATUS_MGR = "Status Mgr"
 COL_STATUS_FIN = "Status Finance"
 
-# Kolom di tab "Master Store" (None = deteksi otomatis, atau isi nama kolom persis)
+# Kolom di tab "Master Store"
 MASTER_COL_KODE = None
 MASTER_COL_NAMA = None
 
-# Nama store manual (opsional). Dipakai jika Master Store belum terbaca.
-# Contoh: {"F35Y": "Nama Store F35Y"}
+# Nama store manual (opsional)
 STORE_NAMES_MANUAL: dict[str, str] = {}
-
-# Model AI ditetapkan secara langsung (hardcode) agar tidak error
-DEFAULT_MODEL = "llama-3.1-8b-instant"
 
 HARI = {0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis", 4: "Jumat", 5: "Sabtu", 6: "Minggu"}
 BULAN = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni",
     "Juli", "Agustus", "September", "Oktober", "November", "Desember",
 ]
-
 
 # =====================================================
 # STYLE
@@ -134,6 +129,7 @@ div[data-baseweb="tab-highlight"] { background-color: #12335E !important; }
 .ai-card .s { color: #5B6B82; font-size: .85rem; margin-bottom: 10px; }
 .ai-answer { background: #F4F7FC; border-left: 4px solid #12335E; border-radius: 8px; padding: 14px 18px;
   color: #1F2D3D; margin-top: 12px; }
+.model-info { color: #7B8AA0; font-size: 0.75rem; text-align: right; margin-top: 4px; }
 
 /* Footer */
 .footer { text-align: center; color: #7B8AA0; font-size: .8rem; margin-top: 36px; padding-top: 16px;
@@ -150,24 +146,19 @@ st.markdown(CSS, unsafe_allow_html=True)
 def esc(x) -> str:
     return html.escape(str(x))
 
-
 def rp(x) -> str:
     return "Rp " + "{:,.0f}".format(x).replace(",", ".")
-
 
 def num(x) -> str:
     return "{:,.0f}".format(x).replace(",", ".")
 
-
 def tgl_id(d: date) -> str:
     return f"{d.day} {BULAN[d.month - 1]} {d.year}"
-
 
 def to_num(s: pd.Series) -> pd.Series:
     return pd.to_numeric(
         s.astype(str).str.replace(r"[^\d\-]", "", regex=True), errors="coerce"
     ).fillna(0)
-
 
 def get_secret(name: str, default=None):
     try:
@@ -175,16 +166,13 @@ def get_secret(name: str, default=None):
     except Exception:
         return default
 
-
 def sheet_url(name: str) -> str:
     return (
         f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
         f"?tqx=out:csv&sheet={quote(name)}"
     )
 
-
 def html_table(headers, rows, num_cols=(), strong_cols=(), footer=None) -> str:
-    """headers: list[str]; rows: list[list]; nilai berisi HTML siap pakai."""
     th = "".join(
         f'<th class="{"num" if i in num_cols else ""}">{esc(h)}</th>' for i, h in enumerate(headers)
     )
@@ -201,7 +189,6 @@ def html_table(headers, rows, num_cols=(), strong_cols=(), footer=None) -> str:
             tds += f'<td class="{"num" if i in num_cols else ""}">{v}</td>'
         body += f'<tr class="total">{tds}</tr>'
     return f'<div class="tbl-wrap"><table class="pro"><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>'
-
 
 def badge(text: str, kind: str) -> str:
     return f'<span class="badge {kind}">{esc(text)}</span>'
@@ -229,10 +216,8 @@ def load_data() -> pd.DataFrame:
     df["Total"] = df[COL_PAGI] + df[COL_SIANG]
     return df
 
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_store_names() -> dict:
-    """Peta kode store -> nama store dari tab Master Store (deteksi kolom otomatis)."""
     names = dict(STORE_NAMES_MANUAL)
     try:
         m = pd.read_csv(sheet_url(MASTER_SHEET_NAME), dtype=str)
@@ -261,7 +246,6 @@ def load_store_names() -> dict:
     except Exception:
         pass
     return names
-
 
 def pickup_dates(pickup_days: list[int]) -> list[date]:
     today = date.today()
@@ -296,47 +280,23 @@ except Exception as e:
 
 store_names = load_store_names()
 
-
 def nama_store(kode: str) -> str:
     return store_names.get(kode, "-")
-
 
 # =====================================================
 # PENGATURAN & PERIODE
 # =====================================================
 with st.expander("Pengaturan periode dan perhitungan"):
-    mode = st.radio(
-        "Mode periode",
-        ["Otomatis (jadwal pick up)", "Manual (pilih tanggal)"],
-        horizontal=True,
-    )
-    pickup_days = st.multiselect(
-        "Hari pick up",
-        options=list(HARI.keys()),
-        default=[0, 3],
-        format_func=lambda k: HARI[k],
-    )
+    mode = st.radio("Mode periode", ["Otomatis (jadwal pick up)", "Manual (pilih tanggal)"], horizontal=True)
+    pickup_days = st.multiselect("Hari pick up", options=list(HARI.keys()), default=[0, 3], format_func=lambda k: HARI[k])
     o1, o2 = st.columns(2)
-    include_pickup_day = o1.checkbox(
-        "Data hari pick up ikut diambil",
-        value=False,
-        help="Kosongkan jika pick up dilakukan pagi hari sebelum setoran hari itu masuk. "
-        "Centang jika pick up dilakukan sore atau malam.",
-    )
-    include_drop = o2.checkbox(
-        "Hitung baris titipan (Drop dari ...) pada total toko",
-        value=False,
-        help="Nominal titipan sudah tercatat di toko asal. Jika dicentang, total dapat terhitung dua kali.",
-    )
+    include_pickup_day = o1.checkbox("Data hari pick up ikut diambil", value=False)
+    include_drop = o2.checkbox("Hitung baris titipan (Drop dari ...) pada total toko", value=False)
+    
     if st.button("Muat ulang data dari Google Sheet"):
         load_data.clear()
         load_store_names.clear()
         st.rerun()
-    if not store_names:
-        st.caption(
-            "Nama toko belum terbaca dari tab Master Store. "
-            "Isi MASTER_COL_KODE dan MASTER_COL_NAMA di bagian konfigurasi app.py."
-        )
 
 if "offset" not in st.session_state:
     st.session_state.offset = 0
@@ -350,12 +310,9 @@ if mode.startswith("Otomatis"):
     idx_latest = len(dates) - 1
 
     c1, c2, c3, _ = st.columns([1.1, 1.1, 1, 4])
-    if c1.button("Periode sebelumnya"):
-        st.session_state.offset -= 1
-    if c2.button("Periode berikutnya"):
-        st.session_state.offset += 1
-    if c3.button("Terbaru"):
-        st.session_state.offset = 0
+    if c1.button("Periode sebelumnya"): st.session_state.offset -= 1
+    if c2.button("Periode berikutnya"): st.session_state.offset += 1
+    if c3.button("Terbaru"): st.session_state.offset = 0
     st.session_state.offset = max(-(idx_latest - 1), min(0, st.session_state.offset))
 
     idx = idx_latest + st.session_state.offset
@@ -382,21 +339,13 @@ if not include_drop:
 
 kode_list = sorted(d[COL_STORE].unique())
 label_map = {k: f"{k} - {nama_store(k)}" if nama_store(k) != "-" else k for k in kode_list}
-pilih = st.multiselect(
-    "Filter toko (kosongkan untuk semua toko)",
-    options=kode_list,
-    format_func=lambda k: label_map.get(k, k),
-)
+pilih = st.multiselect("Filter toko (kosongkan untuk semua toko)", options=kode_list, format_func=lambda k: label_map.get(k, k))
 if pilih:
     d = d[d[COL_STORE].isin(pilih)]
     drops = drops[drops[COL_STORE].isin(pilih)]
 
 if d.empty:
     st.info("Belum ada data setoran pada periode ini.")
-    st.markdown(
-        '<div class="footer">Powered and developed by <b>M Khadafi</b></div>',
-        unsafe_allow_html=True,
-    )
     st.stop()
 
 # =====================================================
@@ -453,10 +402,7 @@ for col, label, value in [
     (k3, "Jumlah Toko", str(len(ringkas))),
     (k4, "Toko Belum Lengkap", str(int((ringkas["Hari Kurang"] > 0).sum()))),
 ]:
-    col.markdown(
-        f'<div class="kpi"><div class="k">{label}</div><div class="v">{value}</div></div>',
-        unsafe_allow_html=True,
-    )
+    col.markdown(f'<div class="kpi"><div class="k">{label}</div><div class="v">{value}</div></div>', unsafe_allow_html=True)
 
 # =====================================================
 # RINCIAN
@@ -468,50 +414,21 @@ with tab_toko:
     rows = []
     for i, r in ringkas.iterrows():
         status = ""
-        if r["Hari Kurang"] > 0:
-            status += badge(f"Kurang {int(r['Hari Kurang'])} hari", "b-miss") + " "
-        if r["Belum Verified"] > 0:
-            status += badge("Menunggu verifikasi", "b-wait")
-        elif r["Hari Kurang"] == 0:
-            status += badge("Lengkap", "b-ok")
-        rows.append(
-            [
-                i + 1,
-                esc(r[COL_STORE]),
-                esc(nama_store(r[COL_STORE])),
-                num(r["Pagi"]),
-                num(r["Siang"]),
-                num(r["Total"]),
-                status,
-            ]
-        )
+        if r["Hari Kurang"] > 0: status += badge(f"Kurang {int(r['Hari Kurang'])} hari", "b-miss") + " "
+        if r["Belum Verified"] > 0: status += badge("Menunggu verifikasi", "b-wait")
+        elif r["Hari Kurang"] == 0: status += badge("Lengkap", "b-ok")
+        rows.append([i + 1, esc(r[COL_STORE]), esc(nama_store(r[COL_STORE])), num(r["Pagi"]), num(r["Siang"]), num(r["Total"]), status])
     st.markdown(
         html_table(
             ["No", "Kode", "Nama Store", "Setoran Pagi", "Setoran Siang", "Total Pick Up", "Status"],
-            rows,
-            num_cols=(3, 4, 5),
-            strong_cols=(2, 5),
+            rows, num_cols=(3, 4, 5), strong_cols=(2, 5),
             footer=["", "", "TOTAL", num(total_pagi), num(total_siang), num(total_pickup), ""],
-        ),
-        unsafe_allow_html=True,
-    )
-    exp = ringkas.copy()
-    exp.insert(1, "Nama Store", exp[COL_STORE].map(nama_store))
-    st.download_button(
-        "Unduh rincian (CSV)",
-        exp.to_csv(index=False).encode("utf-8"),
-        file_name=f"pickup_{start}_{end}.csv",
-        mime="text/csv",
+        ), unsafe_allow_html=True,
     )
 
 harian = (
     d.groupby([COL_TANGGAL, COL_STORE], as_index=False)
-    .agg(
-        Pagi=(COL_PAGI, "sum"),
-        Siang=(COL_SIANG, "sum"),
-        Total=("Total", "sum"),
-        Status=(COL_STATUS_FIN, "first"),
-    )
+    .agg(Pagi=(COL_PAGI, "sum"), Siang=(COL_SIANG, "sum"), Total=("Total", "sum"), Status=(COL_STATUS_FIN, "first"))
     .sort_values([COL_TANGGAL, COL_STORE])
 )
 
@@ -520,60 +437,23 @@ with tab_hari:
     for _, r in harian.iterrows():
         st_fin = r["Status"].lower()
         kind = "b-ok" if st_fin == "verified" else "b-wait"
-        rows.append(
-            [
-                esc(f"{HARI[r[COL_TANGGAL].weekday()]}, {r[COL_TANGGAL]:%d-%m-%Y}"),
-                esc(r[COL_STORE]),
-                esc(nama_store(r[COL_STORE])),
-                num(r["Pagi"]),
-                num(r["Siang"]),
-                num(r["Total"]),
-                badge(r["Status"] or "Menunggu", kind),
-            ]
-        )
-    st.markdown(
-        html_table(
-            ["Tanggal", "Kode", "Nama Store", "Setoran Pagi", "Setoran Siang", "Total", "Status Finance"],
-            rows,
-            num_cols=(3, 4, 5),
-            strong_cols=(2,),
-        ),
-        unsafe_allow_html=True,
-    )
+        rows.append([
+            esc(f"{HARI[r[COL_TANGGAL].weekday()]}, {r[COL_TANGGAL]:%d-%m-%Y}"),
+            esc(r[COL_STORE]), esc(nama_store(r[COL_STORE])), num(r["Pagi"]), num(r["Siang"]), num(r["Total"]),
+            badge(r["Status"] or "Menunggu", kind),
+        ])
+    st.markdown(html_table(["Tanggal", "Kode", "Nama Store", "Setoran Pagi", "Setoran Siang", "Total", "Status Finance"], rows, num_cols=(3, 4, 5), strong_cols=(2,)), unsafe_allow_html=True)
 
 with tab_drop:
     if drops.empty:
         st.info("Tidak ada titipan (Drop) pada periode ini.")
     else:
-        t = (
-            drops.groupby([COL_STORE, "Asal Drop"], as_index=False)["Total"]
-            .sum()
-            .sort_values("Total", ascending=False)
-        )
-        rows = [
-            [
-                esc(r[COL_STORE]),
-                esc(nama_store(r[COL_STORE])),
-                esc(r["Asal Drop"]),
-                esc(nama_store(r["Asal Drop"])),
-                num(r["Total"]),
-            ]
-            for _, r in t.iterrows()
-        ]
-        st.markdown(
-            html_table(
-                ["Kode Penerima", "Nama Penerima", "Kode Asal", "Nama Asal", "Nominal"],
-                rows,
-                num_cols=(4,),
-                strong_cols=(1, 4),
-                footer=["", "", "", "TOTAL", num(t["Total"].sum())],
-            ),
-            unsafe_allow_html=True,
-        )
-        st.caption("Titipan adalah nominal dari toko asal yang disetorkan melalui toko penerima.")
+        t = drops.groupby([COL_STORE, "Asal Drop"], as_index=False)["Total"].sum().sort_values("Total", ascending=False)
+        rows = [[esc(r[COL_STORE]), esc(nama_store(r[COL_STORE])), esc(r["Asal Drop"]), esc(nama_store(r["Asal Drop"])), num(r["Total"])] for _, r in t.iterrows()]
+        st.markdown(html_table(["Kode Penerima", "Nama Penerima", "Kode Asal", "Nama Asal", "Nominal"], rows, num_cols=(4,), strong_cols=(1, 4), footer=["", "", "", "TOTAL", num(t["Total"].sum())]), unsafe_allow_html=True)
 
 # =====================================================
-# ASSISTEN M KHADAFI (AI) DENGAN GROQ
+# ASSISTEN M KHADAFI (AI) AUTO-DETECT GROQ MODEL
 # =====================================================
 st.markdown('<div class="section-title">Asisten</div>', unsafe_allow_html=True)
 st.markdown(
@@ -582,19 +462,14 @@ st.markdown(
       <div class="t">Assisten M Khadafi</div>
       <div class="s">Tanyakan data setoran pada periode yang sedang ditampilkan.</div>
     </div>
-    """,
-    unsafe_allow_html=True,
+    """, unsafe_allow_html=True,
 )
 
 if not get_secret("GROQ_API_KEY"):
     st.info("Assisten M Khadafi belum aktif. Isi GROQ_API_KEY pada Secrets Streamlit untuk mengaktifkan.")
 else:
     with st.form("form_ai", clear_on_submit=False):
-        tanya = st.text_input(
-            "Pertanyaan",
-            placeholder="Contoh: toko mana yang setoran siangnya paling rendah?",
-            label_visibility="collapsed",
-        )
+        tanya = st.text_input("Pertanyaan", placeholder="Contoh: toko mana yang setoran siangnya paling rendah?", label_visibility="collapsed")
         kirim = st.form_submit_button("Tanya Assisten")
 
     if kirim and tanya.strip():
@@ -610,12 +485,28 @@ else:
             + "\nRINCIAN PER HARI (CSV):\n" + harian_ai.head(300).to_csv(index=False)
         )
         
-        # Hardcode model ke llama-3.1-8b-instant agar pasti jalan
-        model = DEFAULT_MODEL
-        
         try:
             client = groq.Groq(api_key=get_secret("GROQ_API_KEY"))
-            with st.spinner("Assisten M Khadafi sedang menganalisa dengan Groq..."):
+            
+            with st.spinner("Mencari AI yang aktif dan menganalisa..."):
+                # 1. AUTO DETECT DAFTAR MODEL YANG AKTIF DARI API KEY INI
+                models_data = client.models.list().data
+                
+                # Saring model teks saja (abaikan whisper untuk audio/suara)
+                available_models = [m.id for m in models_data if "whisper" not in m.id.lower()]
+                
+                if not available_models:
+                    st.error("API Key Groq Anda tidak memiliki akses ke model teks manapun.")
+                    st.stop()
+                
+                # 2. PILIH MODEL (Prioritas: Llama, lalu apa saja yang aktif)
+                chosen_model = available_models[0]
+                for m in available_models:
+                    if "llama" in m.lower(): 
+                        chosen_model = m
+                        break
+                
+                # 3. KIRIM PERTANYAAN
                 chat_completion = client.chat.completions.create(
                     messages=[
                         {
@@ -631,23 +522,21 @@ else:
                             "content": f"{konteks}\n\nPertanyaan: {tanya.strip()}",
                         }
                     ],
-                    model=model,
+                    model=chosen_model,
                     max_tokens=1000,
                 )
             
             jawaban = chat_completion.choices[0].message.content
             st.markdown(f'<div class="ai-answer">{esc(jawaban).replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="model-info">Direspon menggunakan model: {chosen_model}</div>', unsafe_allow_html=True)
             
         except Exception as e:
             if "rate limit" in str(e).lower():
-                st.error("Permintaan ditolak karena limit API Groq telah tercapai. Silakan coba beberapa saat lagi.")
+                st.error("Permintaan ditolak karena limit API Groq telah tercapai (Traffic sedang tinggi). Silakan coba beberapa saat lagi.")
             else:
                 st.error(f"Terjadi kesalahan pada Assisten M Khadafi: {e}")
 
 # =====================================================
 # FOOTER
 # =====================================================
-st.markdown(
-    '<div class="footer">Powered and developed by <b>M Khadafi</b></div>',
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="footer">Powered and developed by <b>M Khadafi</b></div>', unsafe_allow_html=True)
