@@ -38,7 +38,7 @@ BULAN = [
 ]
 
 # =====================================================
-# STYLE CSS
+# STYLE CSS (DIPERBARUI UNTUK MOBILE FRIENDLY)
 # =====================================================
 CSS = """
 <style>
@@ -50,7 +50,7 @@ html, body, [class*="css"], .stApp { font-family: 'Inter', 'Segoe UI', Arial, sa
 [data-testid="stSidebar"], [data-testid="collapsedControl"] { display: none; }
 .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1280px; }
 
-/* Header / Logo Baru yang Lebih Menarik */
+/* Header / Logo */
 .topbar {
   background: linear-gradient(135deg, #0B1F3A 0%, #1A467D 100%);
   border-radius: 16px; padding: 24px 32px; margin-bottom: 20px;
@@ -107,7 +107,7 @@ table.pro tr.total td { background: #EAEFF7 !important; font-weight: 700; color:
 
 /* Buttons */
 .stButton > button, .stDownloadButton > button, div[data-testid="stFormSubmitButton"] > button {
-  background: #FFFFFF; color: #12335E; border: 1px solid #C9D3E3; border-radius: 8px; font-weight: 600; font-size: .85rem; padding: .45rem 1rem; transition: all .15s;
+  background: #FFFFFF; color: #12335E; border: 1px solid #C9D3E3; border-radius: 8px; font-weight: 600; font-size: .85rem; padding: .45rem 1rem; transition: all .15s; width: 100%;
 }
 .stButton > button:hover, .stDownloadButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover {
   background: #12335E; color: #FFFFFF; border-color: #12335E;
@@ -129,6 +129,33 @@ div[data-baseweb="tab-highlight"] { background-color: #12335E !important; }
 /* Footer */
 .footer { text-align: center; color: #7B8AA0; font-size: .8rem; margin-top: 36px; padding-top: 16px; border-top: 1px solid #DCE3EE; }
 .footer b { color: #12335E; }
+
+/* ========================================= */
+/* PENGATURAN MOBILE RESPONSIVE (HP)         */
+/* ========================================= */
+@media (max-width: 768px) {
+  .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+  
+  /* Topbar di HP */
+  .topbar { flex-direction: column; align-items: flex-start; padding: 18px 20px; }
+  .topbar .brand { font-size: 1.25rem; }
+  .topbar .brand .icon { font-size: 1.8rem; padding: 10px; margin-right: 14px; }
+  .topbar .stamp { text-align: left; margin-top: 12px; font-size: 0.8rem; }
+  
+  /* Hero di HP */
+  .hero { padding: 18px 20px; }
+  .hero .amount { font-size: 2.1rem; margin: 4px 0; }
+  
+  /* KPI di HP */
+  .kpi { padding: 12px 14px; margin-bottom: 4px; }
+  .kpi .v { font-size: 1.15rem; }
+  
+  /* Tabel di HP (Agar tidak kebesaran) */
+  table.pro th, table.pro td { padding: 8px 10px; font-size: 0.8rem; }
+  
+  /* AI Card di HP */
+  .ai-card { padding: 16px 18px; }
+}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -229,7 +256,7 @@ def pickup_dates(pickup_days: list[int]) -> list[date]:
 
 
 # =====================================================
-# HEADER / LOGO BARU
+# HEADER / LOGO
 # =====================================================
 st.markdown(
     f"""
@@ -257,59 +284,84 @@ store_names = load_store_names()
 def nama_store(kode: str) -> str:
     return store_names.get(kode, "-")
 
+
 # =====================================================
-# PENGATURAN & PERIODE (MODE MANUAL DIPERBAIKI)
+# PENGATURAN PERIODE PICK UP OTOMATIS
 # =====================================================
-with st.expander("⚙️ Pengaturan Periode & Data", expanded=True):
-    # Kolom untuk pilihan mode dan tombol refresh
-    col_mode, col_btn = st.columns([3, 1])
-    mode = col_mode.radio("Mode periode", ["Otomatis (jadwal pick up)", "Manual (pilih tanggal)"], horizontal=True)
+with st.expander("⚙️ Pengaturan Periode Pick Up", expanded=False):
+    mode = st.radio(
+        "Mode Setting Tanggal Pick Up:",
+        ["1. Jadwal Rutin (Senin & Kamis)", "2. Revisi Tanggal Pick Up (Custom)"],
+    )
     
-    if col_btn.button("🔄 REFRESH DATA"):
-        load_data.clear()
-        load_store_names.clear()
-        st.rerun()
+    st.button("🔄 REFRESH DATA DARI SPREADSHEET", on_click=lambda: (load_data.clear(), load_store_names.clear()))
 
-    # Logika Tampilan Pilihan di Dalam Expander
-    if mode.startswith("Otomatis"):
-        pickup_days = st.multiselect("Hari pick up", options=list(HARI.keys()), default=[0, 3], format_func=lambda k: HARI[k])
-        o1, o2 = st.columns(2)
-        include_pickup_day = o1.checkbox("Data hari pick up ikut diambil", value=False)
-        include_drop = o2.checkbox("Hitung baris titipan (Drop dari ...) pada total toko", value=False)
+    include_pickup_day = st.checkbox("Data hari pick up ikut diambil (Jika pick up sore/malam)", value=False)
+    include_drop = st.checkbox("Hitung baris titipan (Drop dari ...) pada total toko", value=False)
+
+    if mode.startswith("1."):
+        st.markdown("---")
+        pickup_days = st.multiselect("Hari Pick Up Rutin:", options=list(HARI.keys()), default=[0, 3], format_func=lambda k: HARI[k])
+        if not pickup_days:
+            st.warning("Pilih minimal satu hari pick up rutin.")
+            st.stop()
+
+        dates = pickup_dates(pickup_days)
+        idx_latest = len(dates) - 1
+
+        if "offset" not in st.session_state:
+            st.session_state.offset = 0
+
+        # Navigasi Hari
+        c1, c2, c3 = st.columns(3)
+        if c1.button("⬅️ Sebelum"): st.session_state.offset -= 1
+        if c2.button("Berikut ➡️"): st.session_state.offset += 1
+        if c3.button("🔄 Terbaru"): st.session_state.offset = 0
+
+        st.session_state.offset = max(-(idx_latest - 1), min(0, st.session_state.offset))
+        idx = idx_latest + st.session_state.offset
+
+        pickup_date_target = dates[idx]
+        prev_pickup_date = dates[idx - 1]
+
+        selected_pickup = st.date_input("Atau Pilih Tanggal Pick Up Target:", value=pickup_date_target)
+
+        if selected_pickup != pickup_date_target:
+            target_dt = selected_pickup
+            past_pickups = [d for d in dates if d < target_dt]
+            if past_pickups: prev_pickup_date = past_pickups[-1]
+            else: prev_pickup_date = target_dt - timedelta(days=3)
+            pickup_date_target = target_dt
+
+        if include_pickup_day:
+            start, end = prev_pickup_date + timedelta(days=1), pickup_date_target
+        else:
+            start, end = prev_pickup_date, pickup_date_target - timedelta(days=1)
+
+        judul_pickup = f"Pick Up Rutin: {HARI[pickup_date_target.weekday()]}, {tgl_id(pickup_date_target)}"
+
     else:
-        # Jika Manual dipilih, kalender langsung muncul di sini agar tidak error saat data kosong
-        c1, c2 = st.columns(2)
-        start = c1.date_input("Dari tanggal", date.today() - timedelta(days=7))
-        end = c2.date_input("Sampai tanggal", date.today())
-        include_drop = st.checkbox("Hitung baris titipan (Drop dari ...) pada total toko", value=False)
+        st.markdown("---")
+        st.info("💡 **Mode Revisi Tanggal Pick Up**")
+        
+        tgl_pickup_revisi = st.date_input("Tanggal Pick Up Revisi", value=date.today())
+        
+        default_prev = tgl_pickup_revisi - timedelta(days=3)
+        for i in range(1, 10):
+            d_check = tgl_pickup_revisi - timedelta(days=i)
+            if d_check.weekday() in [0, 3]: 
+                default_prev = d_check
+                break
+                
+        tgl_pickup_prev = st.date_input("Tanggal Pick Up Terakhir Sebelumnya", value=default_prev)
 
-if "offset" not in st.session_state:
-    st.session_state.offset = 0
+        if include_pickup_day:
+            start, end = tgl_pickup_prev + timedelta(days=1), tgl_pickup_revisi
+        else:
+            start, end = tgl_pickup_prev, tgl_pickup_revisi - timedelta(days=1)
 
-if mode.startswith("Otomatis"):
-    if not pickup_days:
-        st.warning("Pilih minimal satu hari pick up pada menu pengaturan.")
-        st.stop()
-    
-    # Tombol navigasi Offset diletakkan di luar expander agar mudah di-klik
-    c1, c2, c3, _ = st.columns([1.1, 1.1, 1, 4])
-    if c1.button("⬅️ Periode sebelumnya"): st.session_state.offset -= 1
-    if c2.button("Periode berikutnya ➡️"): st.session_state.offset += 1
-    if c3.button("🔄 Terbaru"): st.session_state.offset = 0
-    
-    dates = pickup_dates(pickup_days)
-    idx_latest = len(dates) - 1
-    st.session_state.offset = max(-(idx_latest - 1), min(0, st.session_state.offset))
+        judul_pickup = f"Pick Up Revisi: {HARI[tgl_pickup_revisi.weekday()]}, {tgl_id(tgl_pickup_revisi)}"
 
-    idx = idx_latest + st.session_state.offset
-    pickup, prev_pickup = dates[idx], dates[idx - 1]
-    if include_pickup_day:
-        start, end = prev_pickup + timedelta(days=1), pickup
-    else:
-        start, end = prev_pickup, pickup - timedelta(days=1)
-    judul_pickup = f"Pick up {HARI[pickup.weekday()]}, {tgl_id(pickup)}"
-else:
-    judul_pickup = "Periode Manual"
 
 # =====================================================
 # FILTER DATA
@@ -322,7 +374,7 @@ if not include_drop:
 
 kode_list = sorted(d[COL_STORE].unique())
 label_map = {k: f"{k} - {nama_store(k)}" if nama_store(k) != "-" else k for k in kode_list}
-pilih = st.multiselect("Filter toko (kosongkan untuk semua toko)", options=kode_list, format_func=lambda k: label_map.get(k, k))
+pilih = st.multiselect("Filter Toko (Cari/Pilih)", options=kode_list, format_func=lambda k: label_map.get(k, k))
 if pilih:
     d = d[d[COL_STORE].isin(pilih)]
     drops = drops[drops[COL_STORE].isin(pilih)]
@@ -330,6 +382,7 @@ if pilih:
 if d.empty:
     st.info(f"Belum ada data setoran pada periode {tgl_id(start)} s/d {tgl_id(end)}.")
     st.stop()
+
 
 # =====================================================
 # SMART PARSER: MENGHITUNG SELISIH AKTUAL
@@ -377,6 +430,7 @@ total_verified = ringkas["Verified"].sum()
 total_belum = ringkas["Belum_Verified"].sum()
 total_selisih = ringkas["Selisih_Aktual"].sum()
 
+
 # =====================================================
 # MENU UTAMA: TOTAL NOMINAL PICK UP
 # =====================================================
@@ -385,8 +439,8 @@ st.markdown(
     <div class="hero">
       <div class="label">Total Nominal Pick Up</div>
       <div class="amount">{rp(total_pickup)}</div>
-      <div class="meta"><b>{esc(judul_pickup)}</b> &nbsp;|&nbsp;
-        Periode data {tgl_id(start)} s/d {tgl_id(end)} ({jumlah_hari} hari) &nbsp;|&nbsp;
+      <div class="meta"><b>{esc(judul_pickup)}</b><br>
+        Periode data: {tgl_id(start)} s/d {tgl_id(end)} ({jumlah_hari} hari) &nbsp;|&nbsp;
         <b>{len(ringkas)}</b> toko</div>
       <div class="split">
         {badge("Terverifikasi Finance: " + rp(total_verified), "b-ok")}
@@ -399,29 +453,26 @@ st.markdown(
 k1, k2, k3, k4 = st.columns(4)
 for col, label, value in [
     (k1, "Setoran Pagi", rp(total_pagi)), (k2, "Setoran Siang", rp(total_siang)),
-    (k3, "Jumlah Toko", str(len(ringkas))), (k4, "Toko Belum Lengkap", str(int((ringkas["Hari Kurang"] > 0).sum()))),
+    (k3, "Jumlah Toko", str(len(ringkas))), (k4, "Kurang Hari", str(int((ringkas["Hari Kurang"] > 0).sum()))),
 ]:
     col.markdown(f'<div class="kpi"><div class="k">{label}</div><div class="v">{value}</div></div>', unsafe_allow_html=True)
 
+
 # =====================================================
-# RINCIAN (DENGAN SORTING DAN SELISIH)
+# RINCIAN (SORTING DAN TEKS SELISIH)
 # =====================================================
-st.markdown('<div class="section-title">Rincian</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Rincian Data</div>', unsafe_allow_html=True)
 tab_toko, tab_hari, tab_drop = st.tabs(["Per Toko", "Per Hari", "Titipan (Drop)"])
 
 with tab_toko:
-    # 1. TOMBOL SORT (URUTKAN DATA)
-    sort_by = st.radio(
-        "Pilih Urutan Tabel:",
-        ["Total Pick Up (Tertinggi)", "Kode Toko (A - Z)", "Selisih (Terbesar)"],
-        horizontal=True
+    sort_by = st.selectbox(
+        "Urutkan Tabel Berdasarkan:",
+        ["Total Pick Up (Tertinggi)", "Kode Toko (A - Z)", "Selisih (Terbesar)"]
     )
     
-    # Menerapkan Sorting
     if sort_by == "Kode Toko (A - Z)":
         ringkas = ringkas.sort_values(COL_STORE, ascending=True)
     elif sort_by == "Selisih (Terbesar)":
-        # Urutkan berdasarkan nominal selisih absolut (agar lebih dan kurang sama-sama naik ke atas)
         ringkas["Abs_Selisih"] = ringkas["Selisih_Aktual"].abs()
         ringkas = ringkas.sort_values(["Abs_Selisih", "Selisih_Aktual"], ascending=[False, False])
     else:
@@ -432,15 +483,15 @@ with tab_toko:
     rows = []
     for i, r in ringkas.iterrows():
         status = ""
-        if r["Hari Kurang"] > 0: status += badge(f"Kurang {int(r['Hari Kurang'])} hari", "b-miss") + " "
+        if r["Hari Kurang"] > 0: status += badge(f"Kurang {int(r['Hari Kurang'])} hr", "b-miss") + " "
         if r["Belum_Verified"] > 0: status += badge("Menunggu Verifikasi", "b-wait") + " "
         
         selisih_val = r["Selisih_Aktual"]
         if selisih_val > 0:
-            teks_selisih = f"Lebih Setor Rp {num(selisih_val)}"
+            teks_selisih = f"Lebih Rp {num(selisih_val)}"
             status += badge("Lebih Setor", "b-wait")
         elif selisih_val < 0:
-            teks_selisih = f"Kurang Setor Rp {num(abs(selisih_val))}"
+            teks_selisih = f"Kurang Rp {num(abs(selisih_val))}"
             status += badge("Kurang Setor", "b-miss")
         else:
             if r["Belum_Verified"] > 0: teks_selisih = "-"
@@ -471,7 +522,7 @@ with tab_toko:
     exp = ringkas.copy()
     exp.insert(1, "Nama Store", exp[COL_STORE].map(nama_store))
     if "Abs_Selisih" in exp.columns: exp = exp.drop(columns=["Abs_Selisih"])
-    st.download_button("Unduh rincian (CSV)", exp.to_csv(index=False).encode("utf-8"), file_name=f"pickup_{start}_{end}.csv", mime="text/csv")
+    st.download_button("📥 Unduh Laporan (CSV)", exp.to_csv(index=False).encode("utf-8"), file_name=f"pickup_{start}_{end}.csv", mime="text/csv")
 
 # Tab Harian
 harian = d.groupby([COL_TANGGAL, COL_STORE], as_index=False).agg(Pagi=(COL_PAGI, "sum"), Siang=(COL_SIANG, "sum"), Total=("Total", "sum"), Status=(COL_STATUS_FIN, "first")).sort_values([COL_TANGGAL, COL_STORE])
@@ -496,12 +547,12 @@ with tab_drop:
 # =====================================================
 # ASSISTEN M KHADAFI (AI) AUTO-DETECT GROQ MODEL
 # =====================================================
-st.markdown('<div class="section-title">Asisten</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">🤖 Asisten M Khadafi</div>', unsafe_allow_html=True)
 st.markdown(
     """
     <div class="ai-card">
-      <div class="t">Assisten M Khadafi</div>
-      <div class="s">Tanyakan data setoran pada periode yang sedang ditampilkan.</div>
+      <div class="t">Tanya Seputar Data Setoran</div>
+      <div class="s">Tanyakan data pada tabel di atas. Contoh: "Toko mana yang selisihnya paling besar?"</div>
     </div>
     """, unsafe_allow_html=True,
 )
@@ -510,8 +561,8 @@ if not get_secret("GROQ_API_KEY"):
     st.info("Assisten M Khadafi belum aktif. Isi GROQ_API_KEY pada Secrets Streamlit untuk mengaktifkan.")
 else:
     with st.form("form_ai", clear_on_submit=False):
-        tanya = st.text_input("Pertanyaan", placeholder="Contoh: toko mana yang memiliki selisih paling besar?", label_visibility="collapsed")
-        kirim = st.form_submit_button("Tanya Assisten")
+        tanya = st.text_input("Pertanyaan", placeholder="Ketik pertanyaan Anda di sini...", label_visibility="collapsed")
+        kirim = st.form_submit_button("Tanya Asisten")
 
     if kirim and tanya.strip():
         import groq
@@ -527,7 +578,7 @@ else:
         
         try:
             client = groq.Groq(api_key=get_secret("GROQ_API_KEY"))
-            with st.spinner("Mencari AI yang aktif dan menganalisa..."):
+            with st.spinner("AI sedang menganalisa data..."):
                 models_data = client.models.list().data
                 kata_terlarang = ["whisper", "guard", "vision", "embed", "llava"]
                 model_chat_valid = [m.id for m in models_data if not any(b in m.id.lower() for b in kata_terlarang)]
@@ -546,7 +597,7 @@ else:
                         {
                             "role": "system",
                             "content": (
-                                "Anda adalah Assisten M Khadafi, asisten analisa setoran omset toko. "
+                                "Anda merupakan Assisten M Khadafi, asisten analisa setoran omset toko. "
                                 "Jawab dalam Bahasa Indonesia, ringkas, profesional, hanya berdasarkan data yang diberikan. "
                                 "Jika ditanya selisih, sebutkan apakah itu Lebih Setor atau Kurang Setor."
                             )
@@ -567,7 +618,7 @@ else:
             if "rate limit" in str(e).lower():
                 st.error("Permintaan ditolak karena limit API Groq telah tercapai. Silakan coba beberapa saat lagi.")
             else:
-                st.error(f"Terjadi kesalahan pada Assisten M Khadafi: {e}")
+                st.error(f"Terjadi kesalahan pada Asisten: {e}")
 
 # =====================================================
 # FOOTER
