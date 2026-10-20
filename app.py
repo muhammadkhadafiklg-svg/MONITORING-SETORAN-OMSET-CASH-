@@ -36,7 +36,7 @@ MASTER_COL_NAMA = None
 STORE_NAMES_MANUAL: dict[str, str] = {}
 
 # Model AI (bisa diganti lewat Secrets: GROQ_MODEL)
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "mixtral-8x7b-32768"
 
 HARI = {0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis", 4: "Jumat", 5: "Sabtu", 6: "Minggu"}
 BULAN = [
