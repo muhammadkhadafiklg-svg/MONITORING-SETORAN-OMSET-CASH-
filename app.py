@@ -38,7 +38,7 @@ BULAN = [
 ]
 
 # =====================================================
-# STYLE
+# STYLE CSS
 # =====================================================
 CSS = """
 <style>
@@ -50,16 +50,19 @@ html, body, [class*="css"], .stApp { font-family: 'Inter', 'Segoe UI', Arial, sa
 [data-testid="stSidebar"], [data-testid="collapsedControl"] { display: none; }
 .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1280px; }
 
-/* Header */
+/* Header / Logo Baru yang Lebih Menarik */
 .topbar {
-  background: linear-gradient(120deg, #0B1F3A 0%, #12335E 100%);
-  border-radius: 14px; padding: 22px 28px; margin-bottom: 18px;
+  background: linear-gradient(135deg, #0B1F3A 0%, #1A467D 100%);
+  border-radius: 16px; padding: 24px 32px; margin-bottom: 20px;
   display: flex; justify-content: space-between; align-items: center;
+  box-shadow: 0 4px 15px rgba(11,31,58,0.15);
 }
-.topbar .brand { color: #FFFFFF; font-size: 1.35rem; font-weight: 700; letter-spacing: .2px; }
-.topbar .brand small { display: block; color: #9DB4D3; font-size: .82rem; font-weight: 400; margin-top: 3px; }
-.topbar .stamp { color: #9DB4D3; font-size: .8rem; text-align: right; }
-.topbar .stamp b { color: #FFFFFF; font-weight: 600; }
+.topbar .brand { display: flex; align-items: center; color: #FFFFFF; font-size: 1.55rem; font-weight: 800; letter-spacing: .2px; }
+.topbar .brand .icon { font-size: 2.2rem; margin-right: 18px; background: rgba(255,255,255,0.15); padding: 12px; border-radius: 14px; line-height: 1; backdrop-filter: blur(5px); }
+.topbar .brand .texts { display: flex; flex-direction: column; }
+.topbar .brand small { color: #A8C5EA; font-size: .88rem; font-weight: 400; margin-top: 4px; }
+.topbar .stamp { color: #A8C5EA; font-size: .85rem; text-align: right; }
+.topbar .stamp b { color: #FFFFFF; font-weight: 600; font-size: 1rem;}
 
 /* Hero */
 .hero {
@@ -92,11 +95,9 @@ html, body, [class*="css"], .stApp { font-family: 'Inter', 'Segoe UI', Arial, sa
 .section-title { color: #0B1F3A; font-size: 1.05rem; font-weight: 700; margin: 22px 0 8px 0; }
 
 /* Table */
-.tbl-wrap { background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 12px; overflow-x: auto;
-  box-shadow: 0 1px 6px rgba(11,31,58,.04); }
+.tbl-wrap { background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 12px; overflow-x: auto; margin-top: 8px; box-shadow: 0 1px 6px rgba(11,31,58,.04); }
 table.pro { width: 100%; border-collapse: collapse; font-size: .88rem; }
-table.pro th { background: #0B1F3A; color: #FFFFFF; font-weight: 600; text-align: left;
-  padding: 12px 14px; white-space: nowrap; font-size: .8rem; letter-spacing: .3px; }
+table.pro th { background: #0B1F3A; color: #FFFFFF; font-weight: 600; text-align: left; padding: 12px 14px; white-space: nowrap; font-size: .8rem; letter-spacing: .3px; }
 table.pro th.num, table.pro td.num { text-align: right; font-variant-numeric: tabular-nums; }
 table.pro td { padding: 11px 14px; border-bottom: 1px solid #EEF1F6; color: #1F2D3D; }
 table.pro tbody tr:nth-child(even) td { background: #F8FAFC; }
@@ -104,13 +105,25 @@ table.pro tbody tr:hover td { background: #EEF3FA; }
 table.pro td.strong { font-weight: 700; color: #0B1F3A; }
 table.pro tr.total td { background: #EAEFF7 !important; font-weight: 700; color: #0B1F3A; border-top: 2px solid #12335E; }
 
+/* Buttons */
+.stButton > button, .stDownloadButton > button, div[data-testid="stFormSubmitButton"] > button {
+  background: #FFFFFF; color: #12335E; border: 1px solid #C9D3E3; border-radius: 8px; font-weight: 600; font-size: .85rem; padding: .45rem 1rem; transition: all .15s;
+}
+.stButton > button:hover, .stDownloadButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover {
+  background: #12335E; color: #FFFFFF; border-color: #12335E;
+}
+div[data-testid="stFormSubmitButton"] > button { background: #12335E; color: #FFFFFF; border-color: #12335E; }
+
+/* Tabs */
+button[data-baseweb="tab"] { font-weight: 600; color: #5B6B82; }
+button[data-baseweb="tab"][aria-selected="true"] { color: #0B1F3A; }
+div[data-baseweb="tab-highlight"] { background-color: #12335E !important; }
+
 /* Assistant */
-.ai-card { background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 14px; padding: 20px 24px; margin-top: 8px;
-  box-shadow: 0 1px 6px rgba(11,31,58,.04); }
+.ai-card { background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 14px; padding: 20px 24px; margin-top: 8px; box-shadow: 0 1px 6px rgba(11,31,58,.04); }
 .ai-card .t { color: #0B1F3A; font-weight: 700; font-size: 1.05rem; }
 .ai-card .s { color: #5B6B82; font-size: .85rem; margin-bottom: 10px; }
-.ai-answer { background: #F4F7FC; border-left: 4px solid #12335E; border-radius: 8px; padding: 14px 18px;
-  color: #1F2D3D; margin-top: 12px; line-height: 1.5; }
+.ai-answer { background: #F4F7FC; border-left: 4px solid #12335E; border-radius: 8px; padding: 14px 18px; color: #1F2D3D; margin-top: 12px; line-height: 1.5; }
 .model-info { color: #7B8AA0; font-size: 0.75rem; text-align: right; margin-top: 4px; }
 
 /* Footer */
@@ -137,15 +150,11 @@ def tgl_id(d: date) -> str:
     return f"{d.day} {BULAN[d.month - 1]} {d.year}"
 
 def to_num(s: pd.Series) -> pd.Series:
-    return pd.to_numeric(
-        s.astype(str).str.replace(r"[^\d\-]", "", regex=True), errors="coerce"
-    ).fillna(0)
+    return pd.to_numeric(s.astype(str).str.replace(r"[^\d\-]", "", regex=True), errors="coerce").fillna(0)
 
 def get_secret(name: str, default=None):
-    try:
-        return st.secrets[name]
-    except Exception:
-        return default
+    try: return st.secrets[name]
+    except Exception: return default
 
 def sheet_url(name: str) -> str:
     return f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={quote(name)}"
@@ -209,8 +218,7 @@ def load_store_names() -> dict:
             for k, v in zip(m[kode], m[nama]):
                 if isinstance(k, str) and isinstance(v, str) and k.strip():
                     names.setdefault(k.strip(), v.strip())
-    except Exception:
-        pass
+    except Exception: pass
     return names
 
 def pickup_dates(pickup_days: list[int]) -> list[date]:
@@ -221,13 +229,17 @@ def pickup_dates(pickup_days: list[int]) -> list[date]:
 
 
 # =====================================================
-# HEADER
+# HEADER / LOGO BARU
 # =====================================================
 st.markdown(
     f"""
     <div class="topbar">
-      <div class="brand">Monitoring Setoran Omset
-        <small>Rekapitulasi setoran pagi dan siang per toko untuk jadwal pick up</small>
+      <div class="brand">
+        <div class="icon">💼</div>
+        <div class="texts">
+            Monitoring Setoran Omset
+            <small>Rekapitulasi setoran pagi dan siang per toko untuk jadwal pick up</small>
+        </div>
       </div>
       <div class="stamp">Data diperbarui otomatis<br><b>{tgl_id(date.today())}</b></div>
     </div>
@@ -246,19 +258,30 @@ def nama_store(kode: str) -> str:
     return store_names.get(kode, "-")
 
 # =====================================================
-# PENGATURAN & PERIODE
+# PENGATURAN & PERIODE (MODE MANUAL DIPERBAIKI)
 # =====================================================
-with st.expander("Pengaturan periode dan perhitungan"):
-    mode = st.radio("Mode periode", ["Otomatis (jadwal pick up)", "Manual (pilih tanggal)"], horizontal=True)
-    pickup_days = st.multiselect("Hari pick up", options=list(HARI.keys()), default=[0, 3], format_func=lambda k: HARI[k])
-    o1, o2 = st.columns(2)
-    include_pickup_day = o1.checkbox("Data hari pick up ikut diambil", value=False)
-    include_drop = o2.checkbox("Hitung baris titipan (Drop dari ...) pada total toko", value=False)
+with st.expander("⚙️ Pengaturan Periode & Data", expanded=True):
+    # Kolom untuk pilihan mode dan tombol refresh
+    col_mode, col_btn = st.columns([3, 1])
+    mode = col_mode.radio("Mode periode", ["Otomatis (jadwal pick up)", "Manual (pilih tanggal)"], horizontal=True)
     
-    if st.button("Muat ulang data dari Google Sheet"):
+    if col_btn.button("🔄 REFRESH DATA"):
         load_data.clear()
         load_store_names.clear()
         st.rerun()
+
+    # Logika Tampilan Pilihan di Dalam Expander
+    if mode.startswith("Otomatis"):
+        pickup_days = st.multiselect("Hari pick up", options=list(HARI.keys()), default=[0, 3], format_func=lambda k: HARI[k])
+        o1, o2 = st.columns(2)
+        include_pickup_day = o1.checkbox("Data hari pick up ikut diambil", value=False)
+        include_drop = o2.checkbox("Hitung baris titipan (Drop dari ...) pada total toko", value=False)
+    else:
+        # Jika Manual dipilih, kalender langsung muncul di sini agar tidak error saat data kosong
+        c1, c2 = st.columns(2)
+        start = c1.date_input("Dari tanggal", date.today() - timedelta(days=7))
+        end = c2.date_input("Sampai tanggal", date.today())
+        include_drop = st.checkbox("Hitung baris titipan (Drop dari ...) pada total toko", value=False)
 
 if "offset" not in st.session_state:
     st.session_state.offset = 0
@@ -267,13 +290,15 @@ if mode.startswith("Otomatis"):
     if not pickup_days:
         st.warning("Pilih minimal satu hari pick up pada menu pengaturan.")
         st.stop()
+    
+    # Tombol navigasi Offset diletakkan di luar expander agar mudah di-klik
+    c1, c2, c3, _ = st.columns([1.1, 1.1, 1, 4])
+    if c1.button("⬅️ Periode sebelumnya"): st.session_state.offset -= 1
+    if c2.button("Periode berikutnya ➡️"): st.session_state.offset += 1
+    if c3.button("🔄 Terbaru"): st.session_state.offset = 0
+    
     dates = pickup_dates(pickup_days)
     idx_latest = len(dates) - 1
-
-    c1, c2, c3, _ = st.columns([1.1, 1.1, 1, 4])
-    if c1.button("Periode sebelumnya"): st.session_state.offset -= 1
-    if c2.button("Periode berikutnya"): st.session_state.offset += 1
-    if c3.button("Terbaru"): st.session_state.offset = 0
     st.session_state.offset = max(-(idx_latest - 1), min(0, st.session_state.offset))
 
     idx = idx_latest + st.session_state.offset
@@ -284,10 +309,7 @@ if mode.startswith("Otomatis"):
         start, end = prev_pickup, pickup - timedelta(days=1)
     judul_pickup = f"Pick up {HARI[pickup.weekday()]}, {tgl_id(pickup)}"
 else:
-    c1, c2, _ = st.columns([1, 1, 3])
-    start = c1.date_input("Dari tanggal", date.today() - timedelta(days=3))
-    end = c2.date_input("Sampai tanggal", date.today())
-    judul_pickup = "Periode manual"
+    judul_pickup = "Periode Manual"
 
 # =====================================================
 # FILTER DATA
@@ -306,53 +328,36 @@ if pilih:
     drops = drops[drops[COL_STORE].isin(pilih)]
 
 if d.empty:
-    st.info("Belum ada data setoran pada periode ini.")
+    st.info(f"Belum ada data setoran pada periode {tgl_id(start)} s/d {tgl_id(end)}.")
     st.stop()
 
 # =====================================================
 # SMART PARSER: MENGHITUNG SELISIH AKTUAL
 # =====================================================
 def parse_finance_status(row):
-    """Membaca catatan finance untuk mencari tahu nominal yg diverifikasi dan selisihnya."""
     val_str = str(row[COL_STATUS_FIN]).lower().strip()
     total = float(row["Total"]) if pd.notnull(row["Total"]) else 0.0
-    
-    # 1. Jika diketik Verified/OK/Sesuai
-    if val_str in ["verified", "ok", "v", "sesuai", "yes", "ya", "true"]:
-        return pd.Series([total, 0.0, 0.0]) # [Verified_Nom, Selisih, Belum_Verif]
-        
-    # 2. Jika kosong / belum diverifikasi
-    if val_str in ["", "nan", "belum", "pending", "false", "none"]:
-        return pd.Series([0.0, 0.0, total])
-        
-    # 3. Jika Finance nulis keterangan "Lebih 100" / "Lebih setor 100"
+    if val_str in ["verified", "ok", "v", "sesuai", "yes", "ya", "true"]: return pd.Series([total, 0.0, 0.0])
+    if val_str in ["", "nan", "belum", "pending", "false", "none"]: return pd.Series([0.0, 0.0, total])
     if "lebih" in val_str:
         nums = re.findall(r'\d+', val_str.replace('.', '').replace(',', ''))
         if nums:
             selisih = float(nums[0])
             return pd.Series([total + selisih, selisih, 0.0])
-            
-    # 4. Jika Finance nulis "Kurang 100"
     if "kurang" in val_str:
         nums = re.findall(r'\d+', val_str.replace('.', '').replace(',', ''))
         if nums:
             selisih = -float(nums[0])
             return pd.Series([total + selisih, selisih, 0.0])
-            
-    # 5. Jika Finance ngetik nominal transfer langsung (contoh: 149900)
     nums = re.findall(r'\d+', val_str.replace('.', '').replace(',', ''))
-    if nums and len(nums[0]) >= 3: # Anggap nominal transfer minimal 3 digit
+    if nums and len(nums[0]) >= 3:
         verif_nom = float(nums[0])
         selisih = verif_nom - total
         return pd.Series([verif_nom, selisih, 0.0])
-        
-    # Default jika tidak dimengerti = Belum Verif
     return pd.Series([0.0, 0.0, total])
 
-# Terapkan perhitungan cerdas
 d[['Verified_Nom', 'Selisih_Nom', 'Belum_Verif_Nom']] = d.apply(parse_finance_status, axis=1)
 
-# Rekap Data
 ringkas = (
     d.groupby(COL_STORE, as_index=False)
     .agg(
@@ -360,7 +365,7 @@ ringkas = (
         Verified=("Verified_Nom", "sum"), Selisih_Aktual=("Selisih_Nom", "sum"),
         Belum_Verified=("Belum_Verif_Nom", "sum"), Hari_Terisi=(COL_TANGGAL, "nunique")
     )
-    .sort_values("Total", ascending=False).reset_index(drop=True)
+    .reset_index(drop=True)
 )
 jumlah_hari = (end - start).days + 1
 ringkas["Hari Kurang"] = (jumlah_hari - ringkas["Hari_Terisi"]).clip(lower=0)
@@ -399,19 +404,37 @@ for col, label, value in [
     col.markdown(f'<div class="kpi"><div class="k">{label}</div><div class="v">{value}</div></div>', unsafe_allow_html=True)
 
 # =====================================================
-# RINCIAN (DENGAN TEKS SELISIH KHUSUS)
+# RINCIAN (DENGAN SORTING DAN SELISIH)
 # =====================================================
 st.markdown('<div class="section-title">Rincian</div>', unsafe_allow_html=True)
 tab_toko, tab_hari, tab_drop = st.tabs(["Per Toko", "Per Hari", "Titipan (Drop)"])
 
 with tab_toko:
+    # 1. TOMBOL SORT (URUTKAN DATA)
+    sort_by = st.radio(
+        "Pilih Urutan Tabel:",
+        ["Total Pick Up (Tertinggi)", "Kode Toko (A - Z)", "Selisih (Terbesar)"],
+        horizontal=True
+    )
+    
+    # Menerapkan Sorting
+    if sort_by == "Kode Toko (A - Z)":
+        ringkas = ringkas.sort_values(COL_STORE, ascending=True)
+    elif sort_by == "Selisih (Terbesar)":
+        # Urutkan berdasarkan nominal selisih absolut (agar lebih dan kurang sama-sama naik ke atas)
+        ringkas["Abs_Selisih"] = ringkas["Selisih_Aktual"].abs()
+        ringkas = ringkas.sort_values(["Abs_Selisih", "Selisih_Aktual"], ascending=[False, False])
+    else:
+        ringkas = ringkas.sort_values("Total", ascending=False)
+        
+    ringkas = ringkas.reset_index(drop=True)
+
     rows = []
     for i, r in ringkas.iterrows():
         status = ""
         if r["Hari Kurang"] > 0: status += badge(f"Kurang {int(r['Hari Kurang'])} hari", "b-miss") + " "
         if r["Belum_Verified"] > 0: status += badge("Menunggu Verifikasi", "b-wait") + " "
         
-        # Format Teks Selisih sesuai permintaan ("Lebih Setor Rp 100")
         selisih_val = r["Selisih_Aktual"]
         if selisih_val > 0:
             teks_selisih = f"Lebih Setor Rp {num(selisih_val)}"
@@ -420,12 +443,9 @@ with tab_toko:
             teks_selisih = f"Kurang Setor Rp {num(abs(selisih_val))}"
             status += badge("Kurang Setor", "b-miss")
         else:
-            if r["Belum_Verified"] > 0:
-                teks_selisih = "-"
-            else:
-                teks_selisih = "Sesuai"
+            if r["Belum_Verified"] > 0: teks_selisih = "-"
+            else: teks_selisih = "Sesuai"
                 
-        # Lencana jika benar-benar bersih
         if r["Hari Kurang"] == 0 and r["Belum_Verified"] == 0 and selisih_val == 0:
             status += badge("Lengkap & Sesuai", "b-ok")
             
@@ -450,9 +470,10 @@ with tab_toko:
     
     exp = ringkas.copy()
     exp.insert(1, "Nama Store", exp[COL_STORE].map(nama_store))
+    if "Abs_Selisih" in exp.columns: exp = exp.drop(columns=["Abs_Selisih"])
     st.download_button("Unduh rincian (CSV)", exp.to_csv(index=False).encode("utf-8"), file_name=f"pickup_{start}_{end}.csv", mime="text/csv")
 
-# Tab Harian (Tetap seperti aslinya)
+# Tab Harian
 harian = d.groupby([COL_TANGGAL, COL_STORE], as_index=False).agg(Pagi=(COL_PAGI, "sum"), Siang=(COL_SIANG, "sum"), Total=("Total", "sum"), Status=(COL_STATUS_FIN, "first")).sort_values([COL_TANGGAL, COL_STORE])
 with tab_hari:
     rows = []
