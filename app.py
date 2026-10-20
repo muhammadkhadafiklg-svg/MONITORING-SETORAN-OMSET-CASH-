@@ -35,8 +35,8 @@ MASTER_COL_NAMA = None
 # Contoh: {"F35Y": "Nama Store F35Y"}
 STORE_NAMES_MANUAL: dict[str, str] = {}
 
-# Model AI (bisa diganti lewat Secrets: ANTHROPIC_MODEL)
-DEFAULT_MODEL = "claude-sonnet-4-6"
+# Model AI (bisa diganti lewat Secrets: GROQ_MODEL)
+DEFAULT_MODEL = "llama3-70b-8192"
 
 HARI = {0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis", 4: "Jumat", 5: "Sabtu", 6: "Minggu"}
 BULAN = [
@@ -573,7 +573,7 @@ with tab_drop:
         st.caption("Titipan adalah nominal dari toko asal yang disetorkan melalui toko penerima.")
 
 # =====================================================
-# ASSISTEN M KHADAFI (AI)
+# ASSISTEN M KHADAFI (AI) DENGAN GROQ
 # =====================================================
 st.markdown('<div class="section-title">Asisten</div>', unsafe_allow_html=True)
 st.markdown(
@@ -586,8 +586,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if not get_secret("ANTHROPIC_API_KEY"):
-    st.info("Assisten M Khadafi belum aktif. Isi ANTHROPIC_API_KEY pada Secrets Streamlit untuk mengaktifkan.")
+if not get_secret("GROQ_API_KEY"):
+    st.info("Assisten M Khadafi belum aktif. Isi GROQ_API_KEY pada Secrets Streamlit untuk mengaktifkan.")
 else:
     with st.form("form_ai", clear_on_submit=False):
         tanya = st.text_input(
@@ -598,7 +598,7 @@ else:
         kirim = st.form_submit_button("Tanya Assisten")
 
     if kirim and tanya.strip():
-        import anthropic
+        import groq
 
         ringkas_ai = ringkas.copy()
         ringkas_ai.insert(1, "Nama Store", ringkas_ai[COL_STORE].map(nama_store))
@@ -609,35 +609,38 @@ else:
             "RINGKASAN PER TOKO (CSV):\n" + ringkas_ai.head(100).to_csv(index=False)
             + "\nRINCIAN PER HARI (CSV):\n" + harian_ai.head(300).to_csv(index=False)
         )
-        model = get_secret("ANTHROPIC_MODEL", DEFAULT_MODEL)
+        model = get_secret("GROQ_MODEL", DEFAULT_MODEL)
+        
         try:
-            client = anthropic.Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
-            with st.spinner("Assisten M Khadafi sedang menganalisa..."):
-                res = client.messages.create(
-                    model=model,
-                    max_tokens=1000,
-                    system=(
-                        "Anda adalah Assisten M Khadafi, asisten analisa setoran omset toko. "
-                        "Jawab dalam Bahasa Indonesia, ringkas, profesional, hanya berdasarkan data yang diberikan. "
-                        "Sebut nama store bersama kodenya bila tersedia. Jika data tidak cukup, katakan dengan jelas."
-                    ),
+            client = groq.Groq(api_key=get_secret("GROQ_API_KEY"))
+            with st.spinner("Assisten M Khadafi sedang menganalisa dengan Groq..."):
+                chat_completion = client.chat.completions.create(
                     messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Anda adalah Assisten M Khadafi, asisten analisa setoran omset toko. "
+                                "Jawab dalam Bahasa Indonesia, ringkas, profesional, hanya berdasarkan data yang diberikan. "
+                                "Sebut nama store bersama kodenya bila tersedia. Jika data tidak cukup, katakan dengan jelas."
+                            )
+                        },
                         {
                             "role": "user",
                             "content": f"{konteks}\n\nPertanyaan: {tanya.strip()}",
                         }
                     ],
+                    model=model,
+                    max_tokens=1000,
                 )
-            jawaban = "".join(b.text for b in res.content if getattr(b, "type", "") == "text")
+            
+            jawaban = chat_completion.choices[0].message.content
             st.markdown(f'<div class="ai-answer">{esc(jawaban).replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
-        except anthropic.APIStatusError as e:
-            pesan = getattr(e, "message", str(e))
-            if "credit balance" in pesan.lower():
-                st.error("Saldo kredit API Anthropic habis. Lakukan top up di console.anthropic.com (menu Billing).")
-            else:
-                st.error(f"Permintaan ke AI ditolak (kode {e.status_code}): {pesan}")
+            
         except Exception as e:
-            st.error(f"Terjadi kesalahan pada Assisten M Khadafi: {e}")
+            if "rate limit" in str(e).lower():
+                st.error("Permintaan ditolak karena limit API Groq telah tercapai. Silakan coba beberapa saat lagi.")
+            else:
+                st.error(f"Terjadi kesalahan pada Assisten M Khadafi: {e}")
 
 # =====================================================
 # FOOTER
