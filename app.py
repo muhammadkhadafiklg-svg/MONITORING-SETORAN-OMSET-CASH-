@@ -18,7 +18,6 @@ SHEET_ID = "1bCvWOsmBIr568kzoNed3gzmPk8EnCAXwE0umdeDj5D4"
 SHEET_NAME = "Data Setoran"
 MASTER_SHEET_NAME = "Master Store"
 
-# Kolom di tab "Data Setoran"
 COL_STORE = "Store"
 COL_TANGGAL = "Tanggal"
 COL_CASHIER = "Cashier"
@@ -27,11 +26,8 @@ COL_SIANG = "Setoran Siang"
 COL_STATUS_MGR = "Status Mgr"
 COL_STATUS_FIN = "Status Finance"
 
-# Kolom di tab "Master Store"
 MASTER_COL_KODE = None
 MASTER_COL_NAMA = None
-
-# Nama store manual (opsional)
 STORE_NAMES_MANUAL: dict[str, str] = {}
 
 HARI = {0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis", 4: "Jumat", 5: "Sabtu", 6: "Minggu"}
@@ -173,9 +169,7 @@ def sheet_url(name: str) -> str:
     )
 
 def html_table(headers, rows, num_cols=(), strong_cols=(), footer=None) -> str:
-    th = "".join(
-        f'<th class="{"num" if i in num_cols else ""}">{esc(h)}</th>' for i, h in enumerate(headers)
-    )
+    th = "".join(f'<th class="{"num" if i in num_cols else ""}">{esc(h)}</th>' for i, h in enumerate(headers))
     body = ""
     for r in rows:
         tds = ""
@@ -201,9 +195,7 @@ def badge(text: str, kind: str) -> str:
 def load_data() -> pd.DataFrame:
     df = pd.read_csv(sheet_url(SHEET_NAME), dtype=str)
     df.columns = [c.strip() for c in df.columns]
-    df = df[
-        [COL_STORE, COL_TANGGAL, COL_CASHIER, COL_PAGI, COL_SIANG, COL_STATUS_MGR, COL_STATUS_FIN]
-    ].copy()
+    df = df[[COL_STORE, COL_TANGGAL, COL_CASHIER, COL_PAGI, COL_SIANG, COL_STATUS_MGR, COL_STATUS_FIN]].copy()
     df[COL_TANGGAL] = pd.to_datetime(df[COL_TANGGAL], errors="coerce").dt.date
     df = df.dropna(subset=[COL_TANGGAL, COL_STORE])
     df[COL_STORE] = df[COL_STORE].str.strip()
@@ -229,9 +221,7 @@ def load_store_names() -> dict:
         if kode is None:
             for key in ("kode", "code", "id store", "store id", "store"):
                 hit = [c for c in cols if key in low[c] and "nama" not in low[c] and "name" not in low[c]]
-                if hit:
-                    kode = hit[0]
-                    break
+                if hit: kode = hit[0]; break
             kode = kode or cols[0]
 
         nama = MASTER_COL_NAMA
@@ -272,10 +262,7 @@ st.markdown(
 try:
     df = load_data()
 except Exception as e:
-    st.error(
-        "Gagal membaca Google Sheet. Pastikan sheet dibagikan 'Anyone with the link' "
-        f"dan nama tab/kolom benar.\n\nDetail: {e}"
-    )
+    st.error(f"Gagal membaca Google Sheet. Detail: {e}")
     st.stop()
 
 store_names = load_store_names()
@@ -356,11 +343,9 @@ d["Verified"] = d["Total"].where(d[COL_STATUS_FIN].str.lower() == "verified", 0)
 ringkas = (
     d.groupby(COL_STORE, as_index=False)
     .agg(
-        Pagi=(COL_PAGI, "sum"),
-        Siang=(COL_SIANG, "sum"),
-        Total=("Total", "sum"),
-        Verified=("Verified", "sum"),
-        Hari_Terisi=(COL_TANGGAL, "nunique"),
+        Pagi=(COL_PAGI, "sum"), Siang=(COL_SIANG, "sum"),
+        Total=("Total", "sum"), Verified=("Verified", "sum"),
+        Hari_Terisi=(COL_TANGGAL, "nunique")
     )
     .sort_values("Total", ascending=False)
     .reset_index(drop=True)
@@ -397,10 +382,8 @@ st.markdown(
 
 k1, k2, k3, k4 = st.columns(4)
 for col, label, value in [
-    (k1, "Setoran Pagi", rp(total_pagi)),
-    (k2, "Setoran Siang", rp(total_siang)),
-    (k3, "Jumlah Toko", str(len(ringkas))),
-    (k4, "Toko Belum Lengkap", str(int((ringkas["Hari Kurang"] > 0).sum()))),
+    (k1, "Setoran Pagi", rp(total_pagi)), (k2, "Setoran Siang", rp(total_siang)),
+    (k3, "Jumlah Toko", str(len(ringkas))), (k4, "Toko Belum Lengkap", str(int((ringkas["Hari Kurang"] > 0).sum()))),
 ]:
     col.markdown(f'<div class="kpi"><div class="k">{label}</div><div class="v">{value}</div></div>', unsafe_allow_html=True)
 
@@ -418,30 +401,16 @@ with tab_toko:
         if r["Belum Verified"] > 0: status += badge("Menunggu verifikasi", "b-wait")
         elif r["Hari Kurang"] == 0: status += badge("Lengkap", "b-ok")
         rows.append([i + 1, esc(r[COL_STORE]), esc(nama_store(r[COL_STORE])), num(r["Pagi"]), num(r["Siang"]), num(r["Total"]), status])
-    st.markdown(
-        html_table(
-            ["No", "Kode", "Nama Store", "Setoran Pagi", "Setoran Siang", "Total Pick Up", "Status"],
-            rows, num_cols=(3, 4, 5), strong_cols=(2, 5),
-            footer=["", "", "TOTAL", num(total_pagi), num(total_siang), num(total_pickup), ""],
-        ), unsafe_allow_html=True,
-    )
+    st.markdown(html_table(["No", "Kode", "Nama Store", "Setoran Pagi", "Setoran Siang", "Total Pick Up", "Status"], rows, num_cols=(3, 4, 5), strong_cols=(2, 5), footer=["", "", "TOTAL", num(total_pagi), num(total_siang), num(total_pickup), ""]), unsafe_allow_html=True)
 
-harian = (
-    d.groupby([COL_TANGGAL, COL_STORE], as_index=False)
-    .agg(Pagi=(COL_PAGI, "sum"), Siang=(COL_SIANG, "sum"), Total=("Total", "sum"), Status=(COL_STATUS_FIN, "first"))
-    .sort_values([COL_TANGGAL, COL_STORE])
-)
+harian = d.groupby([COL_TANGGAL, COL_STORE], as_index=False).agg(Pagi=(COL_PAGI, "sum"), Siang=(COL_SIANG, "sum"), Total=("Total", "sum"), Status=(COL_STATUS_FIN, "first")).sort_values([COL_TANGGAL, COL_STORE])
 
 with tab_hari:
     rows = []
     for _, r in harian.iterrows():
         st_fin = r["Status"].lower()
         kind = "b-ok" if st_fin == "verified" else "b-wait"
-        rows.append([
-            esc(f"{HARI[r[COL_TANGGAL].weekday()]}, {r[COL_TANGGAL]:%d-%m-%Y}"),
-            esc(r[COL_STORE]), esc(nama_store(r[COL_STORE])), num(r["Pagi"]), num(r["Siang"]), num(r["Total"]),
-            badge(r["Status"] or "Menunggu", kind),
-        ])
+        rows.append([esc(f"{HARI[r[COL_TANGGAL].weekday()]}, {r[COL_TANGGAL]:%d-%m-%Y}"), esc(r[COL_STORE]), esc(nama_store(r[COL_STORE])), num(r["Pagi"]), num(r["Siang"]), num(r["Total"]), badge(r["Status"] or "Menunggu", kind)])
     st.markdown(html_table(["Tanggal", "Kode", "Nama Store", "Setoran Pagi", "Setoran Siang", "Total", "Status Finance"], rows, num_cols=(3, 4, 5), strong_cols=(2,)), unsafe_allow_html=True)
 
 with tab_drop:
@@ -451,6 +420,7 @@ with tab_drop:
         t = drops.groupby([COL_STORE, "Asal Drop"], as_index=False)["Total"].sum().sort_values("Total", ascending=False)
         rows = [[esc(r[COL_STORE]), esc(nama_store(r[COL_STORE])), esc(r["Asal Drop"]), esc(nama_store(r["Asal Drop"])), num(r["Total"])] for _, r in t.iterrows()]
         st.markdown(html_table(["Kode Penerima", "Nama Penerima", "Kode Asal", "Nama Asal", "Nominal"], rows, num_cols=(4,), strong_cols=(1, 4), footer=["", "", "", "TOTAL", num(t["Total"].sum())]), unsafe_allow_html=True)
+
 
 # =====================================================
 # ASSISTEN M KHADAFI (AI) AUTO-DETECT GROQ MODEL
@@ -489,24 +459,30 @@ else:
             client = groq.Groq(api_key=get_secret("GROQ_API_KEY"))
             
             with st.spinner("Mencari AI yang aktif dan menganalisa..."):
-                # 1. AUTO DETECT DAFTAR MODEL YANG AKTIF DARI API KEY INI
+                # 1. AMBIL DAFTAR MODEL AKTIF DARI GROQ
                 models_data = client.models.list().data
                 
-                # Saring model teks saja (abaikan whisper untuk audio/suara)
-                available_models = [m.id for m in models_data if "whisper" not in m.id.lower()]
+                # 2. FILTER: Buang model Sensor(Guard), Audio(Whisper), Gambar(Vision/Llava)
+                kata_terlarang = ["whisper", "guard", "vision", "embed", "llava"]
                 
-                if not available_models:
-                    st.error("API Key Groq Anda tidak memiliki akses ke model teks manapun.")
+                model_chat_valid = [
+                    m.id for m in models_data 
+                    if not any(b in m.id.lower() for b in kata_terlarang)
+                ]
+                
+                if not model_chat_valid:
+                    st.error("API Key Groq Anda tidak memiliki akses ke model teks/chat manapun.")
                     st.stop()
                 
-                # 2. PILIH MODEL (Prioritas: Llama, lalu apa saja yang aktif)
-                chosen_model = available_models[0]
-                for m in available_models:
-                    if "llama" in m.lower(): 
+                # 3. PILIH MODEL: Prioritaskan Llama, Gemma, atau Mixtral
+                chosen_model = model_chat_valid[0] # Default jika tidak ada yang spesifik
+                for m in model_chat_valid:
+                    # Kita cari model AI yang memang dirancang untuk ngobrol
+                    if "llama" in m.lower() or "gemma" in m.lower() or "mixtral" in m.lower(): 
                         chosen_model = m
                         break
                 
-                # 3. KIRIM PERTANYAAN (dengan max_tokens diturunkan ke 512 agar tidak error)
+                # 4. KIRIM PERTANYAAN (dengan Max Tokens = 512 agar aman)
                 chat_completion = client.chat.completions.create(
                     messages=[
                         {
@@ -523,7 +499,7 @@ else:
                         }
                     ],
                     model=chosen_model,
-                    max_tokens=512,  # <--- INI SUDAH DIUBAH MENJADI 512
+                    max_tokens=512,
                 )
             
             jawaban = chat_completion.choices[0].message.content
@@ -532,7 +508,7 @@ else:
             
         except Exception as e:
             if "rate limit" in str(e).lower():
-                st.error("Permintaan ditolak karena limit API Groq telah tercapai (Traffic sedang tinggi). Silakan coba beberapa saat lagi.")
+                st.error("Permintaan ditolak karena limit API Groq telah tercapai. Silakan coba beberapa saat lagi.")
             else:
                 st.error(f"Terjadi kesalahan pada Assisten M Khadafi: {e}")
 
