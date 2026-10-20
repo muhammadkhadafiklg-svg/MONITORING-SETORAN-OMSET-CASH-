@@ -35,8 +35,8 @@ MASTER_COL_NAMA = None
 # Contoh: {"F35Y": "Nama Store F35Y"}
 STORE_NAMES_MANUAL: dict[str, str] = {}
 
-# Model AI (bisa diganti lewat Secrets: GROQ_MODEL)
-DEFAULT_MODEL = "mixtral-8x7b-32768"
+# Model AI ditetapkan secara langsung (hardcode) agar tidak error
+DEFAULT_MODEL = "llama-3.1-8b-instant"
 
 HARI = {0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis", 4: "Jumat", 5: "Sabtu", 6: "Minggu"}
 BULAN = [
@@ -609,7 +609,9 @@ else:
             "RINGKASAN PER TOKO (CSV):\n" + ringkas_ai.head(100).to_csv(index=False)
             + "\nRINCIAN PER HARI (CSV):\n" + harian_ai.head(300).to_csv(index=False)
         )
-        model = get_secret("GROQ_MODEL", DEFAULT_MODEL)
+        
+        # Hardcode model ke llama-3.1-8b-instant agar pasti jalan
+        model = DEFAULT_MODEL
         
         try:
             client = groq.Groq(api_key=get_secret("GROQ_API_KEY"))
