@@ -38,7 +38,7 @@ BULAN = [
 ]
 
 # =====================================================
-# STYLE CSS (DIPERBARUI UNTUK MOBILE FRIENDLY)
+# STYLE CSS (MOBILE RESPONSIVE)
 # =====================================================
 CSS = """
 <style>
@@ -130,30 +130,17 @@ div[data-baseweb="tab-highlight"] { background-color: #12335E !important; }
 .footer { text-align: center; color: #7B8AA0; font-size: .8rem; margin-top: 36px; padding-top: 16px; border-top: 1px solid #DCE3EE; }
 .footer b { color: #12335E; }
 
-/* ========================================= */
-/* PENGATURAN MOBILE RESPONSIVE (HP)         */
-/* ========================================= */
 @media (max-width: 768px) {
   .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-  
-  /* Topbar di HP */
   .topbar { flex-direction: column; align-items: flex-start; padding: 18px 20px; }
   .topbar .brand { font-size: 1.25rem; }
   .topbar .brand .icon { font-size: 1.8rem; padding: 10px; margin-right: 14px; }
   .topbar .stamp { text-align: left; margin-top: 12px; font-size: 0.8rem; }
-  
-  /* Hero di HP */
   .hero { padding: 18px 20px; }
   .hero .amount { font-size: 2.1rem; margin: 4px 0; }
-  
-  /* KPI di HP */
   .kpi { padding: 12px 14px; margin-bottom: 4px; }
   .kpi .v { font-size: 1.15rem; }
-  
-  /* Tabel di HP (Agar tidak kebesaran) */
   table.pro th, table.pro td { padding: 8px 10px; font-size: 0.8rem; }
-  
-  /* AI Card di HP */
   .ai-card { padding: 16px 18px; }
 }
 </style>
@@ -256,7 +243,7 @@ def pickup_dates(pickup_days: list[int]) -> list[date]:
 
 
 # =====================================================
-# HEADER / LOGO
+# HEADER
 # =====================================================
 st.markdown(
     f"""
@@ -312,7 +299,6 @@ with st.expander("⚙️ Pengaturan Periode Pick Up", expanded=False):
         if "offset" not in st.session_state:
             st.session_state.offset = 0
 
-        # Navigasi Hari
         c1, c2, c3 = st.columns(3)
         if c1.button("⬅️ Sebelum"): st.session_state.offset -= 1
         if c2.button("Berikut ➡️"): st.session_state.offset += 1
@@ -364,7 +350,7 @@ with st.expander("⚙️ Pengaturan Periode Pick Up", expanded=False):
 
 
 # =====================================================
-# FILTER DATA
+# FILTER DATA & SHORTCUT STORE
 # =====================================================
 d = df[(df[COL_TANGGAL] >= start) & (df[COL_TANGGAL] <= end)].copy()
 d = d[d[COL_STATUS_MGR].str.lower() != "ditolak"]
@@ -374,7 +360,8 @@ if not include_drop:
 
 kode_list = sorted(d[COL_STORE].unique())
 label_map = {k: f"{k} - {nama_store(k)}" if nama_store(k) != "-" else k for k in kode_list}
-pilih = st.multiselect("Filter Toko (Cari/Pilih)", options=kode_list, format_func=lambda k: label_map.get(k, k))
+
+pilih = st.multiselect("🔍 Filter / Cari Toko Khusus:", options=kode_list, format_func=lambda k: label_map.get(k, k), help="Ketik atau pilih toko spesifik untuk langsung memfokuskan pengecekan")
 if pilih:
     d = d[d[COL_STORE].isin(pilih)]
     drops = drops[drops[COL_STORE].isin(pilih)]
@@ -459,19 +446,32 @@ for col, label, value in [
 
 
 # =====================================================
-# RINCIAN (SORTING DAN TEKS SELISIH)
+# RINCIAN (DENGAN SORT BY STORE LENGKAP)
 # =====================================================
 st.markdown('<div class="section-title">Rincian Data</div>', unsafe_allow_html=True)
 tab_toko, tab_hari, tab_drop = st.tabs(["Per Toko", "Per Hari", "Titipan (Drop)"])
 
 with tab_toko:
+    # FITUR SORT BY STORE & PARAMETER LAINNYA
     sort_by = st.selectbox(
-        "Urutkan Tabel Berdasarkan:",
-        ["Total Pick Up (Tertinggi)", "Kode Toko (A - Z)", "Selisih (Terbesar)"]
+        "📌 Urutkan Urutan Toko Berdasarkan:",
+        [
+            "Kode Toko (A - Z)", 
+            "Nama Toko (A - Z)", 
+            "Total Pick Up (Tertinggi)", 
+            "Total Pick Up (Terendah)", 
+            "Selisih (Terbesar)"
+        ],
+        index=0
     )
     
     if sort_by == "Kode Toko (A - Z)":
         ringkas = ringkas.sort_values(COL_STORE, ascending=True)
+    elif sort_by == "Nama Toko (A - Z)":
+        ringkas["Nama_Tmp"] = ringkas[COL_STORE].map(nama_store)
+        ringkas = ringkas.sort_values("Nama_Tmp", ascending=True).drop(columns=["Nama_Tmp"])
+    elif sort_by == "Total Pick Up (Terendah)":
+        ringkas = ringkas.sort_values("Total", ascending=True)
     elif sort_by == "Selisih (Terbesar)":
         ringkas["Abs_Selisih"] = ringkas["Selisih_Aktual"].abs()
         ringkas = ringkas.sort_values(["Abs_Selisih", "Selisih_Aktual"], ascending=[False, False])
