@@ -19,6 +19,7 @@ st.set_page_config(
 SHEET_ID = "1bCvWOsmBIr568kzoNed3gzmPk8EnCAXwE0umdeDj5D4"
 SHEET_NAME = "Data Setoran"
 MASTER_SHEET_NAME = "Master Store"
+PICKUP_SHEET_NAME = "Data Pickup"
 
 # Kolom di tab "Data Setoran"
 COL_STORE = "Store"
@@ -258,6 +259,14 @@ def get_param(name: str):
     return v
 
 
+def status_cell(status: str, nama: str, ok_text: str) -> str:
+    ok = str(status).lower() == "verified"
+    out = badge(ok_text if ok else "Menunggu", "b-ok" if ok else "b-wait")
+    if ok and nama:
+        out += f'<br><span style="color:#7B8AA0;font-size:.75rem">{esc(nama)}</span>'
+    return out
+
+
 def first_filled(s: pd.Series) -> str:
     return next((x for x in s if x), "")
 
@@ -286,6 +295,43 @@ def load_data() -> pd.DataFrame:
     df["Asal Drop"] = df[COL_CASHIER].str.extract(r"(?i)drop dari\s+(\S+)")[0]
     df["Total"] = df[COL_PAGI] + df[COL_SIANG]
     return df
+
+
+@st.cache_data(ttl=300, show_spinner="Mengambil data pick up...")
+def load_pickup() -> pd.DataFrame:
+    """Transaksi pick up / drop / tambahan dari tab Data Pickup (tampil langsung, tanpa menunggu approval)."""
+    p = pd.read_csv(sheet_url(PICKUP_SHEET_NAME), dtype=str)
+    p.columns = [c.strip() for c in p.columns]
+
+    def pick(*names):
+        for n in names:
+            if n in p.columns:
+                return p[n].fillna("").astype(str).str.strip()
+        return pd.Series([""] * len(p), index=p.index)
+
+    out = pd.DataFrame(
+        {
+            "Store": pick("Store"),
+            "Tanggal": pick("Tanggal Pickup", "Tanggal"),
+            "Vendor": pick("Vendor"),
+            "Jumlah": to_num(pick("Jumlah")),
+            "Oleh": pick("Diinput Oleh"),
+            "StatusMgr": pick("Status Mgr"),
+            "Mgr": pick("Mgr Oleh"),
+            "StatusFin": pick("Status FRA", "Status Finance"),
+            "Fin": pick("FRA Oleh", "Finance Oleh"),
+            "Foto": pick("Foto Bukti"),
+            "Jenis": pick("Jenis"),
+        }
+    )
+    out["Tanggal"] = pd.to_datetime(out["Tanggal"].str.replace("'", "", regex=False), errors="coerce").dt.date
+    out = out.dropna(subset=["Tanggal"])
+    out = out[out["Store"] != ""].copy()
+    out["Kind"] = [
+        "tambahan" if j.lower() == "tambahan" else "drop" if v.startswith("Drop ke Store") else "pickup"
+        for j, v in zip(out["Jenis"], out["Vendor"])
+    ]
+    return out
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -465,11 +511,13 @@ if mode.startswith("Otomatis"):
     else:
         start, end = prev_pickup, pickup - timedelta(days=1)
     judul_pickup = f"Pick up {HARI[pickup.weekday()]}, {tgl_id(pickup)}"
+    p_start, p_end = prev_pickup + timedelta(days=1), pickup  # transaksi pick up periode ini
 else:
     c1, c2, _ = st.columns([1, 1, 3])
     start = c1.date_input("Dari tanggal", date.today() - timedelta(days=3))
     end = c2.date_input("Sampai tanggal", date.today())
     judul_pickup = "Periode manual"
+    p_start, p_end = start, end
 
 # =====================================================
 # FILTER DATA
@@ -562,7 +610,7 @@ for col, label, value in [
 # RINCIAN
 # =====================================================
 st.markdown('<div class="section-title">Rincian</div>', unsafe_allow_html=True)
-tab_toko, tab_hari, tab_drop = st.tabs(["Per Toko", "Per Hari", "Titipan (Drop)"])
+tab_toko, tab_hari, tab_pick, tab_drop = st.tabs(["Per Toko", "Per Hari", "Pick Up", "Titipan (Drop)"])
 
 with tab_toko:
     rows = []
@@ -645,6 +693,87 @@ with tab_hari:
         ),
         unsafe_allow_html=True,
     )
+
+with tab_pick:
+    try:
+        pk_all = load_pickup()
+    except Exception as e:
+        pk_all = None
+        st.info(f"Data pick up belum bisa dibaca dari tab {PICKUP_SHEET_NAME}. Detail: {e}")
+    if pk_all is not None:
+        pk = pk_all[
+            (pk_all["Tanggal"] >= p_start)
+            & (pk_all["Tanggal"] <= p_end)
+            & (pk_all["StatusMgr"].str.lower() != "ditolak")
+        ]
+        masuk = df[
+            df["is_drop"]
+            & (df[COL_TANGGAL] >= p_start)
+            & (df[COL_TANGGAL] <= p_end)
+            & (df[COL_STATUS_MGR].str.lower() != "ditolak")
+        ]
+        if pilih:
+            pk = pk[pk["Store"].isin(pilih)]
+            masuk = masuk[masuk[COL_STORE].isin(pilih)]
+        v_pick = pk.loc[pk["Kind"] == "pickup", "Jumlah"].sum()
+        v_drop = pk.loc[pk["Kind"] == "drop", "Jumlah"].sum()
+        v_tamb = pk.loc[pk["Kind"] == "tambahan", "Jumlah"].sum()
+        v_masuk = masuk["Total"].sum()
+        base = d.loc[~d["is_drop"], "Total"].sum()
+        selisih = base + v_tamb + v_masuk - v_pick - v_drop
+
+        q1, q2, q3, q4 = st.columns(4)
+        for col, label, value in [
+            (q1, "Pick Up ke Vendor", rp(v_pick)),
+            (q2, "Drop ke Store Lain", rp(v_drop)),
+            (q3, "Setoran Tambahan", rp(v_tamb)),
+            (q4, "Selisih terhadap Setoran", rp(selisih)),
+        ]:
+            col.markdown(
+                f'<div class="kpi"><div class="k">{label}</div><div class="v">{value}</div></div>',
+                unsafe_allow_html=True,
+            )
+        st.caption(
+            f"Transaksi pick up tanggal {tgl_id(p_start)} s/d {tgl_id(p_end)}. "
+            f"Selisih = setoran ({rp(base)}) + tambahan + titipan masuk - pick up - drop keluar. "
+            "Data yang ditolak Manager tidak ditampilkan."
+        )
+        if pk.empty:
+            st.info("Belum ada transaksi pick up pada periode ini.")
+        else:
+            rows = []
+            for _, r in pk.sort_values(["Tanggal", "Store"]).iterrows():
+                jenis = {
+                    "pickup": badge("Pick up", "b-neutral"),
+                    "drop": badge("Drop", "b-wait"),
+                    "tambahan": badge("Tambahan", "b-ok"),
+                }[r["Kind"]]
+                nominal = ("+ " if r["Kind"] == "tambahan" else "") + num(r["Jumlah"])
+                judul = f"{r['Store']} - {r['Tanggal']:%d-%m-%Y} - {r['Vendor'][:40]}"
+                rows.append(
+                    [
+                        esc(f"{HARI[r['Tanggal'].weekday()]}, {r['Tanggal']:%d-%m-%Y}"),
+                        esc(r["Store"]),
+                        esc(nama_store(r["Store"])),
+                        esc(r["Vendor"]),
+                        jenis,
+                        nominal,
+                        esc(r["Oleh"]),
+                        status_cell(r["StatusMgr"], r["Mgr"], "Disetujui"),
+                        status_cell(r["StatusFin"], r["Fin"], "Terverifikasi"),
+                        foto_btn(r["Foto"], "Foto", judul) or '<span style="color:#9AA7BA">-</span>',
+                    ]
+                )
+            st.markdown(
+                html_table(
+                    ["Tanggal", "Kode", "Nama Store", "Keterangan", "Jenis", "Jumlah", "Diinput Oleh",
+                     "Approval Manager", "Verifikasi Finance", "Foto Bukti"],
+                    rows,
+                    num_cols=(5,),
+                    strong_cols=(2, 5),
+                ),
+                unsafe_allow_html=True,
+            )
 
 with tab_drop:
     if drops.empty:
