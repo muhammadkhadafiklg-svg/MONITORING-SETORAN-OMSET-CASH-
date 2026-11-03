@@ -297,6 +297,17 @@ def load_data() -> pd.DataFrame:
     return df
 
 
+def detect_foto_col(p: pd.DataFrame):
+    """Cari kolom foto di Data Pickup: judul 'Foto Bukti' atau (jika judul kosong) kolom yang isinya link/DB:."""
+    names = (["Foto Bukti"] if "Foto Bukti" in p.columns else []) + [c for c in p.columns if c != "Foto Bukti"]
+    best, best_n = None, 0
+    for c in names:
+        n = int(p[c].fillna("").astype(str).str.strip().str.match(r"^(?:https?://|DB:)").sum())
+        if n > best_n:
+            best, best_n = c, n
+    return best
+
+
 @st.cache_data(ttl=300, show_spinner="Mengambil data pick up...")
 def load_pickup() -> pd.DataFrame:
     """Transaksi pick up / drop / tambahan dari tab Data Pickup (tampil langsung, tanpa menunggu approval)."""
@@ -309,6 +320,7 @@ def load_pickup() -> pd.DataFrame:
                 return p[n].fillna("").astype(str).str.strip()
         return pd.Series([""] * len(p), index=p.index)
 
+    foto_col = detect_foto_col(p)
     out = pd.DataFrame(
         {
             "Store": pick("Store"),
@@ -320,7 +332,7 @@ def load_pickup() -> pd.DataFrame:
             "Mgr": pick("Mgr Oleh"),
             "StatusFin": pick("Status FRA", "Status Finance"),
             "Fin": pick("FRA Oleh", "Finance Oleh"),
-            "Foto": pick("Foto Bukti"),
+            "Foto": p[foto_col].fillna("").astype(str).str.strip() if foto_col else pick("Foto Bukti"),
             "Jenis": pick("Jenis"),
         }
     )
@@ -741,6 +753,8 @@ with tab_pick:
         if pk.empty:
             st.info("Belum ada transaksi pick up pada periode ini.")
         else:
+            if (pk["Foto"] == "").all():
+                st.caption("Belum ada foto bukti yang terbaca pada transaksi pick up periode ini.")
             rows = []
             for _, r in pk.sort_values(["Tanggal", "Store"]).iterrows():
                 jenis = {
