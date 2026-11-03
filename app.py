@@ -1,4 +1,6 @@
+import base64
 import html
+import re
 from datetime import date, timedelta
 from urllib.parse import quote
 
@@ -220,26 +222,40 @@ def badge(text: str, kind: str) -> str:
     return f'<span class="badge {kind}">{esc(text)}</span>'
 
 
-def foto_btn(url, label: str) -> str:
+def foto_btn(url, label: str, judul: str = "") -> str:
     """Tombol foto: ketika diklik, foto bukti terbuka di tab baru."""
     url = str(url).strip()
     if url.lower().startswith("http"):
-        return f'<a class="fbtn" href="{esc(url)}" target="_blank" rel="noopener">{esc(label)}</a>'
-    if url.startswith("DB:"):
-        return badge(f"{label} (tersimpan di sheet)", "b-neutral")
-    return ""
+        href = url
+    elif url.startswith("DB:"):  # foto tersimpan di tab Data Foto: dibuka lewat halaman foto aplikasi ini
+        href = f"?foto={quote(url[3:])}&judul={quote(judul or label)}"
+    else:
+        return ""
+    return f'<a class="fbtn" href="{esc(href)}" target="_blank" rel="noopener">{esc(label)}</a>'
 
 
 def foto_cell(r) -> str:
     """Tombol foto untuk satu baris rincian harian (Pagi / Siang / Full)."""
+    base = f"{r[COL_STORE]} - {r[COL_TANGGAL]:%d-%m-%Y}"
     out = ""
     if r["FotoPagi"]:
-        out += foto_btn(r["FotoPagi"], "Full" if r["Tipe"] == "full" else "Pagi")
+        lb = "Full" if r["Tipe"] == "full" else "Pagi"
+        out += foto_btn(r["FotoPagi"], lb, f"{base} - {lb}")
     if r["FotoSiang"]:
-        out += foto_btn(r["FotoSiang"], "Siang")
+        out += foto_btn(r["FotoSiang"], "Siang", f"{base} - Siang")
     if not out and r["FotoBukti"]:
-        out = foto_btn(r["FotoBukti"], "Foto")
+        out = foto_btn(r["FotoBukti"], "Foto", f"{base} - Foto bukti")
     return out or '<span style="color:#9AA7BA">-</span>'
+
+
+def get_param(name: str):
+    try:
+        v = st.query_params.get(name)
+    except Exception:
+        v = st.experimental_get_query_params().get(name)
+    if isinstance(v, (list, tuple)):
+        v = v[0] if v else None
+    return v
 
 
 def first_filled(s: pd.Series) -> str:
@@ -305,12 +321,54 @@ def load_store_names() -> dict:
     return names
 
 
+@st.cache_data(ttl=3600, show_spinner="Memuat foto...")
+def load_foto_db(pid: str):
+    """Foto yang tersimpan di tab Data Foto (dipecah per potongan, urut kolom Urut)."""
+    if not re.fullmatch(r"[0-9a-f]{12}", pid):
+        return None
+    tq = f"select C,D where A = '{pid}' order by C"
+    url = (
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
+        f"?tqx=out:csv&sheet={quote('Data Foto')}&tq={quote(tq)}"
+    )
+    try:
+        t = pd.read_csv(url, dtype=str)
+        parts = [str(x)[1:] for x in t.iloc[:, 1].dropna()]
+        return base64.b64decode("".join(parts)) if parts else None
+    except Exception:
+        return None
+
+
 def pickup_dates(pickup_days: list[int]) -> list[date]:
     today = date.today()
     start = today - timedelta(days=730)
     days = (start + timedelta(days=i) for i in range((today - start).days + 1))
     return [d for d in days if d.weekday() in pickup_days]
 
+
+# =====================================================
+# HALAMAN FOTO (dibuka dari tombol foto, tab baru)
+# =====================================================
+_foto = get_param("foto")
+if _foto:
+    _judul = str(get_param("judul") or "Foto Bukti")
+    st.markdown(
+        f'<div class="topbar"><div class="brand">Foto Bukti<small>{esc(_judul)}</small></div></div>',
+        unsafe_allow_html=True,
+    )
+    _img = load_foto_db(str(_foto))
+    if _img:
+        st.image(_img)
+        st.download_button(
+            "Unduh foto", _img, file_name=_judul.replace(" ", "_") + ".jpg", mime="image/jpeg"
+        )
+    else:
+        st.warning("Foto tidak ditemukan atau belum bisa dibaca dari tab Data Foto.")
+    st.markdown(
+        '<div class="footer">Powered and developed by <b>M Khadafi</b></div>',
+        unsafe_allow_html=True,
+    )
+    st.stop()
 
 # =====================================================
 # HEADER
