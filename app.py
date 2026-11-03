@@ -1,392 +1,695 @@
-# Dashboard Monitoring Setoran Omset Cash (Streamlit)
-# Membaca Google Sheet yang sama dengan aplikasi Apps Script. Pick up tampil langsung (tanpa menunggu approval)
-# lengkap dengan foto bukti, status Manager dan FRA.
-import base64
 import html
-import io
-import math
-import re
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, timedelta
+from urllib.parse import quote
 
 import pandas as pd
-import requests
 import streamlit as st
 
+st.set_page_config(
+    page_title="Monitoring Setoran Omset",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+# =====================================================
+# KONFIGURASI
+# =====================================================
 SHEET_ID = "1bCvWOsmBIr568kzoNed3gzmPk8EnCAXwE0umdeDj5D4"
-# GID tab (angka setelah "gid=" di alamat sheet). Jika kosong, tab dibaca lewat nama tab.
-GID = {"Data Setoran": "1032464994", "Data Pickup": "", "Master Store": ""}
-TZ = ZoneInfo("Asia/Pontianak")
-# Jadwal pick up: 0 = Senin, 3 = Kamis. Angka = berapa hari omset sebelumnya yang diambil.
-# Senin mengambil omset Kamis-Minggu (4 hari); Kamis mengambil omset Senin-Rabu (3 hari).
-PICKUP_COVER = {0: 4, 3: 3}
-PER_PAGE = 10
-LOGO = "https://drive.google.com/thumbnail?id=1VzTk_XgppZ2HhVS1dUgKiogRD1u8jRWS&sz=w128"
-BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
-HARI = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
-E = lambda s: html.escape(str(s if s is not None else ""))
+SHEET_NAME = "Data Setoran"
+MASTER_SHEET_NAME = "Master Store"
+
+# Kolom di tab "Data Setoran"
+COL_STORE = "Store"
+COL_TANGGAL = "Tanggal"
+COL_CASHIER = "Cashier"
+COL_PAGI = "Setoran Pagi"
+COL_SIANG = "Setoran Siang"
+COL_STATUS_MGR = "Status Mgr"
+COL_STATUS_FIN = "Status Finance"
+
+# Kolom foto bukti di tab "Data Setoran" (opsional; jika tidak ada, tombol foto tidak muncul)
+COL_FOTO_PAGI = "Foto Pagi"
+COL_FOTO_SIANG = "Foto Siang"
+COL_FOTO_BUKTI = "Foto Bukti"
+COL_TIPE = "Tipe Shift"
+FOTO_COLS = [COL_FOTO_PAGI, COL_FOTO_SIANG, COL_FOTO_BUKTI, COL_TIPE]
+
+# Kolom di tab "Master Store" (None = deteksi otomatis, atau isi nama kolom persis)
+MASTER_COL_KODE = None
+MASTER_COL_NAMA = None
+
+# Nama store manual (opsional). Dipakai jika Master Store belum terbaca.
+# Contoh: {"F35Y": "Nama Store F35Y"}
+STORE_NAMES_MANUAL: dict[str, str] = {}
+
+# Model AI (bisa diganti lewat Secrets: ANTHROPIC_MODEL)
+DEFAULT_MODEL = "claude-sonnet-4-6"
+
+HARI = {0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis", 4: "Jumat", 5: "Sabtu", 6: "Minggu"}
+BULAN = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+]
 
 
-# ---------------------------------------------------------------- data
-def _csv(url, params=None):
-    r = requests.get(url, params=params, timeout=40)
-    r.raise_for_status()
-    r.encoding = "utf-8"
-    return pd.read_csv(io.StringIO(r.text), dtype=str, keep_default_na=False)
+# =====================================================
+# STYLE
+# =====================================================
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+html, body, [class*="css"], .stApp { font-family: 'Inter', 'Segoe UI', Arial, sans-serif; }
+.stApp { background: #F4F6FA; }
+#MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
+[data-testid="stSidebar"], [data-testid="collapsedControl"] { display: none; }
+.block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1280px; }
+
+/* Header */
+.topbar {
+  background: linear-gradient(120deg, #0B1F3A 0%, #12335E 100%);
+  border-radius: 14px; padding: 22px 28px; margin-bottom: 18px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.topbar .brand { color: #FFFFFF; font-size: 1.35rem; font-weight: 700; letter-spacing: .2px; }
+.topbar .brand small { display: block; color: #9DB4D3; font-size: .82rem; font-weight: 400; margin-top: 3px; }
+.topbar .stamp { color: #9DB4D3; font-size: .8rem; text-align: right; }
+.topbar .stamp b { color: #FFFFFF; font-weight: 600; }
+
+/* Hero */
+.hero {
+  background: #FFFFFF; border: 1px solid #E3E8F0; border-left: 6px solid #12335E;
+  border-radius: 14px; padding: 26px 30px; margin: 6px 0 16px 0;
+  box-shadow: 0 2px 10px rgba(11,31,58,.05);
+}
+.hero .label { color: #5B6B82; font-size: .78rem; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; }
+.hero .amount { color: #0B1F3A; font-size: 2.9rem; font-weight: 800; line-height: 1.15; margin: 6px 0 8px 0; }
+.hero .meta { color: #44546A; font-size: .92rem; }
+.hero .meta b { color: #0B1F3A; }
+.hero .split { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* Badge */
+.badge { display: inline-block; padding: 4px 11px; border-radius: 20px; font-size: .76rem; font-weight: 600; }
+.b-ok { background: #E6F4EA; color: #1E7B3A; }
+.b-wait { background: #FFF4DE; color: #9A6200; }
+.b-miss { background: #FDE8E8; color: #B42318; }
+.b-neutral { background: #EAEFF7; color: #26456E; }
+
+/* KPI */
+.kpi {
+  background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 12px;
+  padding: 16px 18px; box-shadow: 0 1px 6px rgba(11,31,58,.04);
+}
+.kpi .k { color: #5B6B82; font-size: .74rem; font-weight: 600; letter-spacing: .8px; text-transform: uppercase; }
+.kpi .v { color: #0B1F3A; font-size: 1.35rem; font-weight: 700; margin-top: 4px; }
+
+/* Section */
+.section-title { color: #0B1F3A; font-size: 1.05rem; font-weight: 700; margin: 22px 0 8px 0; }
+
+/* Table */
+.tbl-wrap { background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 12px; overflow-x: auto;
+  box-shadow: 0 1px 6px rgba(11,31,58,.04); }
+table.pro { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.pro th { background: #0B1F3A; color: #FFFFFF; font-weight: 600; text-align: left;
+  padding: 12px 14px; white-space: nowrap; font-size: .8rem; letter-spacing: .3px; }
+table.pro th.num, table.pro td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.pro td { padding: 11px 14px; border-bottom: 1px solid #EEF1F6; color: #1F2D3D; }
+table.pro tbody tr:nth-child(even) td { background: #F8FAFC; }
+table.pro tbody tr:hover td { background: #EEF3FA; }
+table.pro td.strong { font-weight: 700; color: #0B1F3A; }
+table.pro tr.total td { background: #EAEFF7 !important; font-weight: 700; color: #0B1F3A; border-top: 2px solid #12335E; }
+
+/* Tombol foto (klik membuka foto bukti di tab baru) */
+a.fbtn { display: inline-block; padding: 4px 12px; margin: 0 6px 2px 0; border: 1px solid #C9D3E3; border-radius: 8px;
+  background: #FFFFFF; color: #12335E !important; font-size: .76rem; font-weight: 600; text-decoration: none !important;
+  white-space: nowrap; transition: all .15s; }
+a.fbtn:hover { background: #12335E; color: #FFFFFF !important; border-color: #12335E; }
+
+/* Buttons */
+.stButton > button, .stDownloadButton > button, div[data-testid="stFormSubmitButton"] > button {
+  background: #FFFFFF; color: #12335E; border: 1px solid #C9D3E3; border-radius: 8px;
+  font-weight: 600; font-size: .85rem; padding: .45rem 1rem; transition: all .15s;
+}
+.stButton > button:hover, .stDownloadButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover {
+  background: #12335E; color: #FFFFFF; border-color: #12335E;
+}
+div[data-testid="stFormSubmitButton"] > button { background: #12335E; color: #FFFFFF; border-color: #12335E; }
+
+/* Tabs */
+button[data-baseweb="tab"] { font-weight: 600; color: #5B6B82; }
+button[data-baseweb="tab"][aria-selected="true"] { color: #0B1F3A; }
+div[data-baseweb="tab-highlight"] { background-color: #12335E !important; }
+
+/* Assistant */
+.ai-card { background: #FFFFFF; border: 1px solid #E3E8F0; border-radius: 14px; padding: 20px 24px; margin-top: 8px;
+  box-shadow: 0 1px 6px rgba(11,31,58,.04); }
+.ai-card .t { color: #0B1F3A; font-weight: 700; font-size: 1.05rem; }
+.ai-card .s { color: #5B6B82; font-size: .85rem; margin-bottom: 10px; }
+.ai-answer { background: #F4F7FC; border-left: 4px solid #12335E; border-radius: 8px; padding: 14px 18px;
+  color: #1F2D3D; margin-top: 12px; }
+
+/* Footer */
+.footer { text-align: center; color: #7B8AA0; font-size: .8rem; margin-top: 36px; padding-top: 16px;
+  border-top: 1px solid #DCE3EE; }
+.footer b { color: #12335E; }
+</style>
+"""
+st.markdown(CSS, unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def read_tab(name):
-    base = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}"
-    gid = GID.get(name, "")
+# =====================================================
+# HELPER
+# =====================================================
+def esc(x) -> str:
+    return html.escape(str(x))
+
+
+def rp(x) -> str:
+    return "Rp " + "{:,.0f}".format(x).replace(",", ".")
+
+
+def num(x) -> str:
+    return "{:,.0f}".format(x).replace(",", ".")
+
+
+def tgl_id(d: date) -> str:
+    return f"{d.day} {BULAN[d.month - 1]} {d.year}"
+
+
+def to_num(s: pd.Series) -> pd.Series:
+    return pd.to_numeric(
+        s.astype(str).str.replace(r"[^\d\-]", "", regex=True), errors="coerce"
+    ).fillna(0)
+
+
+def get_secret(name: str, default=None):
     try:
-        if gid:
-            df = _csv(f"{base}/export", {"format": "csv", "gid": gid})
-        else:
-            df = _csv(f"{base}/gviz/tq", {"tqx": "out:csv", "sheet": name, "headers": 1})
+        return st.secrets[name]
     except Exception:
-        return pd.DataFrame()
-    df.columns = [str(c).strip() for c in df.columns]
+        return default
+
+
+def sheet_url(name: str) -> str:
+    return (
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
+        f"?tqx=out:csv&sheet={quote(name)}"
+    )
+
+
+def html_table(headers, rows, num_cols=(), strong_cols=(), footer=None) -> str:
+    """headers: list[str]; rows: list[list]; nilai berisi HTML siap pakai."""
+    th = "".join(
+        f'<th class="{"num" if i in num_cols else ""}">{esc(h)}</th>' for i, h in enumerate(headers)
+    )
+    body = ""
+    for r in rows:
+        tds = ""
+        for i, v in enumerate(r):
+            cls = ("num " if i in num_cols else "") + ("strong" if i in strong_cols else "")
+            tds += f'<td class="{cls.strip()}">{v}</td>'
+        body += f"<tr>{tds}</tr>"
+    if footer:
+        tds = ""
+        for i, v in enumerate(footer):
+            tds += f'<td class="{"num" if i in num_cols else ""}">{v}</td>'
+        body += f'<tr class="total">{tds}</tr>'
+    return f'<div class="tbl-wrap"><table class="pro"><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>'
+
+
+def badge(text: str, kind: str) -> str:
+    return f'<span class="badge {kind}">{esc(text)}</span>'
+
+
+def foto_btn(url, label: str) -> str:
+    """Tombol foto: ketika diklik, foto bukti terbuka di tab baru."""
+    url = str(url).strip()
+    if url.lower().startswith("http"):
+        return f'<a class="fbtn" href="{esc(url)}" target="_blank" rel="noopener">{esc(label)}</a>'
+    if url.startswith("DB:"):
+        return badge(f"{label} (tersimpan di sheet)", "b-neutral")
+    return ""
+
+
+def foto_cell(r) -> str:
+    """Tombol foto untuk satu baris rincian harian (Pagi / Siang / Full)."""
+    out = ""
+    if r["FotoPagi"]:
+        out += foto_btn(r["FotoPagi"], "Full" if r["Tipe"] == "full" else "Pagi")
+    if r["FotoSiang"]:
+        out += foto_btn(r["FotoSiang"], "Siang")
+    if not out and r["FotoBukti"]:
+        out = foto_btn(r["FotoBukti"], "Foto")
+    return out or '<span style="color:#9AA7BA">-</span>'
+
+
+def first_filled(s: pd.Series) -> str:
+    return next((x for x in s if x), "")
+
+
+# =====================================================
+# DATA
+# =====================================================
+@st.cache_data(ttl=300, show_spinner="Mengambil data dari Google Sheet...")
+def load_data() -> pd.DataFrame:
+    df = pd.read_csv(sheet_url(SHEET_NAME), dtype=str)
+    df.columns = [c.strip() for c in df.columns]
+    for c in FOTO_COLS:  # kolom foto opsional
+        if c not in df.columns:
+            df[c] = ""
+    df = df[
+        [COL_STORE, COL_TANGGAL, COL_CASHIER, COL_PAGI, COL_SIANG, COL_STATUS_MGR, COL_STATUS_FIN] + FOTO_COLS
+    ].copy()
+    df[COL_TANGGAL] = pd.to_datetime(df[COL_TANGGAL], errors="coerce").dt.date
+    df = df.dropna(subset=[COL_TANGGAL, COL_STORE])
+    df[COL_STORE] = df[COL_STORE].str.strip()
+    df[COL_PAGI] = to_num(df[COL_PAGI])
+    df[COL_SIANG] = to_num(df[COL_SIANG])
+    for c in (COL_CASHIER, COL_STATUS_MGR, COL_STATUS_FIN, *FOTO_COLS):
+        df[c] = df[c].fillna("").str.strip()
+    df["is_drop"] = df[COL_CASHIER].str.lower().str.startswith("drop dari")
+    df["Asal Drop"] = df[COL_CASHIER].str.extract(r"(?i)drop dari\s+(\S+)")[0]
+    df["Total"] = df[COL_PAGI] + df[COL_SIANG]
     return df
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def db_photo(pid):
-    """Foto yang tersimpan di tab 'Data Foto' (cadangan jika Google Drive gagal)."""
-    if not re.fullmatch(r"[0-9a-f]{12}", str(pid)):
-        return None
+def load_store_names() -> dict:
+    """Peta kode store -> nama store dari tab Master Store (deteksi kolom otomatis)."""
+    names = dict(STORE_NAMES_MANUAL)
     try:
-        df = _csv(f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq",
-                  {"tqx": "out:csv", "sheet": "Data Foto", "tq": f"select C,D where A = '{pid}' order by C"})
-        parts = [str(x)[1:] for x in df.iloc[:, 1].tolist()]
-        return base64.b64decode("".join(parts)) if parts else None
+        m = pd.read_csv(sheet_url(MASTER_SHEET_NAME), dtype=str)
+        m.columns = [c.strip() for c in m.columns]
+        cols = list(m.columns)
+        low = {c: c.lower() for c in cols}
+
+        kode = MASTER_COL_KODE
+        if kode is None:
+            for key in ("kode", "code", "id store", "store id", "store"):
+                hit = [c for c in cols if key in low[c] and "nama" not in low[c] and "name" not in low[c]]
+                if hit:
+                    kode = hit[0]
+                    break
+            kode = kode or cols[0]
+
+        nama = MASTER_COL_NAMA
+        if nama is None:
+            hit = [c for c in cols if "nama" in low[c] or "name" in low[c]]
+            nama = hit[0] if hit else None
+
+        if nama:
+            for k, v in zip(m[kode], m[nama]):
+                if isinstance(k, str) and isinstance(v, str) and k.strip():
+                    names.setdefault(k.strip(), v.strip())
     except Exception:
-        return None
+        pass
+    return names
 
 
-def to_int(v):
-    s = re.sub(r"[^\d\-]", "", str(v))
-    return int(s) if s not in ("", "-") else 0
+def pickup_dates(pickup_days: list[int]) -> list[date]:
+    today = date.today()
+    start = today - timedelta(days=730)
+    days = (start + timedelta(days=i) for i in range((today - start).days + 1))
+    return [d for d in days if d.weekday() in pickup_days]
 
 
-def to_date(v):
-    s = str(v)
-    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", s)
-    if m:
-        return date(int(m[1]), int(m[2]), int(m[3]))
-    m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", s)
-    if m:
-        try:
-            return date(int(m[3]), int(m[2]), int(m[1]))
-        except ValueError:
-            return None
-    return None
+# =====================================================
+# HEADER
+# =====================================================
+st.markdown(
+    f"""
+    <div class="topbar">
+      <div class="brand">Monitoring Setoran Omset
+        <small>Rekapitulasi setoran pagi dan siang per toko untuk jadwal pick up</small>
+      </div>
+      <div class="stamp">Data diperbarui otomatis<br><b>{tgl_id(date.today())}</b></div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+try:
+    df = load_data()
+except Exception as e:
+    st.error(
+        "Gagal membaca Google Sheet. Pastikan sheet dibagikan 'Anyone with the link' "
+        f"dan nama tab/kolom benar.\n\nDetail: {e}"
+    )
+    st.stop()
+
+store_names = load_store_names()
 
 
-def col(df, name):
-    return df[name].astype(str) if name in df.columns else pd.Series([""] * len(df), index=df.index)
+def nama_store(kode: str) -> str:
+    return store_names.get(kode, "-")
 
 
-def prep_setoran(df):
-    if df.empty:
-        return pd.DataFrame()
-    s = pd.DataFrame({
-        "store": col(df, "Store").str.strip(), "tgl": col(df, "Tanggal").map(to_date),
-        "cashier": col(df, "Cashier").str.strip(), "pagi": col(df, "Setoran Pagi").map(to_int),
-        "siang": col(df, "Setoran Siang").map(to_int), "total": col(df, "Total Setoran").map(to_int),
-        "mS": col(df, "Status Mgr").str.strip(), "fS": col(df, "Status FRA").str.strip(),
-        "fotoPagi": col(df, "Foto Pagi").str.strip(), "fotoSiang": col(df, "Foto Siang").str.strip(),
-        "foto": col(df, "Foto Bukti").str.strip(), "tipe": col(df, "Tipe Shift").str.strip(),
-        "ket": col(df, "Remark Pagi").str.strip(),
-    })
-    s["total"] = s["total"].where(s["total"] != 0, s["pagi"] + s["siang"])
-    s["dropin"] = s["cashier"].str.startswith("Drop dari")
-    return s[s["store"] != ""]
+# =====================================================
+# PENGATURAN & PERIODE
+# =====================================================
+with st.expander("Pengaturan periode dan perhitungan"):
+    mode = st.radio(
+        "Mode periode",
+        ["Otomatis (jadwal pick up)", "Manual (pilih tanggal)"],
+        horizontal=True,
+    )
+    pickup_days = st.multiselect(
+        "Hari pick up",
+        options=list(HARI.keys()),
+        default=[0, 3],
+        format_func=lambda k: HARI[k],
+    )
+    o1, o2 = st.columns(2)
+    include_pickup_day = o1.checkbox(
+        "Data hari pick up ikut diambil",
+        value=False,
+        help="Kosongkan jika pick up dilakukan pagi hari sebelum setoran hari itu masuk. "
+        "Centang jika pick up dilakukan sore atau malam.",
+    )
+    include_drop = o2.checkbox(
+        "Hitung baris titipan (Drop dari ...) pada total toko",
+        value=False,
+        help="Nominal titipan sudah tercatat di toko asal. Jika dicentang, total dapat terhitung dua kali.",
+    )
+    if st.button("Muat ulang data dari Google Sheet"):
+        load_data.clear()
+        load_store_names.clear()
+        st.rerun()
+    if not store_names:
+        st.caption(
+            "Nama toko belum terbaca dari tab Master Store. "
+            "Isi MASTER_COL_KODE dan MASTER_COL_NAMA di bagian konfigurasi app.py."
+        )
 
+if "offset" not in st.session_state:
+    st.session_state.offset = 0
 
-def prep_pickup(df):
-    if df.empty:
-        return pd.DataFrame()
-    p = pd.DataFrame({
-        "id": col(df, "ID").str.strip(), "store": col(df, "Store").str.strip(),
-        "tgl": col(df, "Tanggal Pickup").map(to_date), "vendor": col(df, "Vendor").str.strip(),
-        "jml": col(df, "Jumlah").map(to_int), "by": col(df, "Diinput Oleh").str.strip(),
-        "mS": col(df, "Status Mgr").str.strip(), "mBy": col(df, "Mgr Oleh").str.strip(),
-        "fS": col(df, "Status FRA").str.strip(), "fBy": col(df, "FRA Oleh").str.strip(),
-        "foto": col(df, "Foto Bukti").str.strip(), "jenis": col(df, "Jenis").str.strip(),
-        "waktu": col(df, "Waktu Input").str.strip(),
-    })
-    p["kind"] = ["tambahan" if j == "tambahan" else "drop" if v.startswith("Drop ke Store") else "pickup"
-                 for j, v in zip(p["jenis"], p["vendor"])]
-    return p[p["store"] != ""]
-
-
-def store_names():
-    m = read_tab("Master Store")
-    if m.empty or "Kode Store" not in m.columns or "Nama Store" not in m.columns:
-        return {}
-    return {str(k).strip(): str(v).strip() for k, v in zip(m["Kode Store"], m["Nama Store"]) if str(k).strip()}
-
-
-# ---------------------------------------------------------------- periode
-def last_pickup_day(today):
-    for i in range(8):
-        d = today - timedelta(days=i)
-        if d.weekday() in PICKUP_COVER:
-            return d
-
-
-def fdate(d):
-    return f"{d.day} {BULAN[d.month - 1]} {d.year}"
-
-
-def periods(today, mode, manual=None):
-    """Mengembalikan (rentang omset, rentang pick up, label)."""
-    pd_ = last_pickup_day(today)
-    if mode == "Pilih manual" and manual:
-        a, b = manual
-        return (a, b), (a, b), f"{fdate(a)} – {fdate(b)}"
-    if mode == "Periode berjalan":
-        o, p = (pd_, today), (pd_ + timedelta(days=1), today)
-        return o, p, f"Omset berjalan {fdate(o[0])} – {fdate(o[1])}"
-    o0 = pd_ - timedelta(days=PICKUP_COVER[pd_.weekday()])
-    o, p = (o0, pd_ - timedelta(days=1)), (o0 + timedelta(days=1), pd_)
-    return o, p, f"Omset {HARI[o0.weekday()]} {fdate(o[0])} – {HARI[o[1].weekday()]} {fdate(o[1])} · Pick up {HARI[pd_.weekday()]} {fdate(pd_)}"
-
-
-def within(series, rng):
-    return series.map(lambda d: d is not None and rng[0] <= d <= rng[1])
-
-
-# ---------------------------------------------------------------- ringkasan
-def rp(n):
-    n = int(n or 0)
-    return ("-" if n < 0 else "") + "Rp " + f"{abs(n):,}".replace(",", ".")
-
-
-def summarize(S, P, orng, prng, only=None):
-    rows = {}
-    g = lambda k: rows.setdefault(k, dict(store=k, omset=0, drop_in=0, pickup=0, drop=0, tambah=0, trx=0, tunggu_m=0, tunggu_f=0))
-    if not S.empty:
-        s = S[within(S["tgl"], orng) & (S["mS"] != "Ditolak")]
-        for r in s[~s["dropin"]].itertuples():
-            g(r.store)["omset"] += r.total
-        s2 = S[within(S["tgl"], prng) & (S["mS"] != "Ditolak") & S["dropin"]]
-        for r in s2.itertuples():
-            g(r.store)["drop_in"] += r.total
-    if not P.empty:
-        p = P[within(P["tgl"], prng)]
-        for r in p.itertuples():
-            x = g(r.store)
-            if r.mS == "Ditolak":
-                continue
-            if r.kind == "pickup":
-                x["pickup"] += r.jml
-                x["trx"] += 1
-            elif r.kind == "drop":
-                x["drop"] += r.jml
-            else:
-                x["tambah"] += r.jml
-            if r.mS != "Verified":
-                x["tunggu_m"] += 1
-            elif r.fS != "Verified":
-                x["tunggu_f"] += 1
-    for x in rows.values():
-        x["selisih"] = x["omset"] + x["drop_in"] + x["tambah"] - x["pickup"] - x["drop"]
-    if only:
-        rows = {k: v for k, v in rows.items() if k == only}
-    return rows
-
-
-# ---------------------------------------------------------------- tampilan
-CSS = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-[data-testid="stSidebar"], [data-testid="collapsedControl"], #MainMenu, header, footer { display: none !important; }
-.block-container { max-width: 1280px; padding-top: 1.4rem; padding-bottom: 3rem; }
-.top { display:flex; align-items:center; gap:14px; padding-bottom:14px; border-bottom:3px solid #1d4ed8; margin-bottom:18px; }
-.top img { height:44px; background:#fff; border-radius:8px; }
-.top h1 { font-size:1.6rem; margin:0; color:#0f172a; font-weight:700; }
-.top p { margin:0; color:#64748b; font-size:.9rem; }
-.hero { background:linear-gradient(135deg,#0f172a,#1e3a8a); color:#f8fafc; border-radius:16px; padding:28px 32px; margin:10px 0 16px; }
-.hero .l { font-size:.95rem; color:#bfdbfe; font-weight:500; letter-spacing:.3px; }
-.hero .v { font-size:2.8rem; font-weight:700; line-height:1.15; margin:4px 0; }
-.hero .s { color:#cbd5e1; font-size:.92rem; }
-.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin-bottom:8px; }
-.card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px 18px; }
-.card .l { color:#64748b; font-size:.82rem; font-weight:500; }
-.card .v { color:#0f172a; font-size:1.35rem; font-weight:700; }
-h3.sec { font-size:1.1rem; color:#0f172a; margin:26px 0 10px; font-weight:700; }
-table.t { width:100%; border-collapse:collapse; font-size:.86rem; background:#fff; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; }
-table.t th { background:#f1f5f9; color:#0f172a; text-align:left; padding:9px 12px; font-weight:600; }
-table.t td { padding:8px 12px; border-top:1px solid #eef2f7; color:#334155; vertical-align:top; }
-table.t td.n, table.t th.n { text-align:right; font-variant-numeric:tabular-nums; }
-.badge { display:inline-block; font-size:.74rem; font-weight:600; padding:2px 10px; border-radius:99px; margin:0 6px 4px 0; background:#e2e8f0; color:#334155; }
-.b-ok { background:#dcfce7; color:#166534; } .b-wait { background:#fef3c7; color:#92400e; } .b-bad { background:#fee2e2; color:#991b1b; } .b-info { background:#dbeafe; color:#1e40af; }
-.item .h { font-weight:600; color:#0f172a; } .item .a { font-size:1.35rem; font-weight:700; color:#0f172a; margin:2px 0 6px; }
-.item .m { color:#64748b; font-size:.85rem; }
-.foot { text-align:center; color:#94a3b8; font-size:.85rem; margin-top:40px; padding-top:16px; border-top:1px solid #e2e8f0; }
-</style>
-"""
-
-
-def table(rows, cols, empty="Tidak ada data."):
-    if not rows:
-        return f"<div class='card'>{E(empty)}</div>"
-    h = "".join(f"<th class='{'n' if k == 'n' else ''}'>{E(lbl)}</th>" for _, lbl, k in cols)
-    b = "".join("<tr>" + "".join(f"<td class='{'n' if k == 'n' else ''}'>{c(r)}</td>" for c, _, k in cols) + "</tr>" for r in rows)
-    return f"<table class='t'><tr>{h}</tr>{b}</table>"
-
-
-def drive_id(u):
-    m = re.search(r"/d/([\w-]{20,})", u) or re.search(r"[?&]id=([\w-]{20,})", u)
-    return m.group(1) if m else None
-
-
-def show_photo(u, width=320):
-    u = str(u).strip()
-    if not u:
-        st.caption("Tidak ada foto bukti")
-    elif u.startswith("DB:"):
-        b = db_photo(u[3:])
-        st.image(b, width=width) if b else st.caption("Foto tidak dapat dimuat")
-    elif drive_id(u):
-        st.image(f"https://drive.google.com/thumbnail?id={drive_id(u)}&sz=w1000", width=width)
-        st.markdown(f"[Buka foto asli]({u})")
-    elif u.startswith("http"):
-        st.image(u, width=width)
-        st.markdown(f"[Buka foto asli]({u})")
-
-
-def badges(r):
-    m = {"Verified": ("Disetujui Manager", "b-ok"), "Menunggu": ("Menunggu Manager", "b-wait"), "Ditolak": ("Ditolak", "b-bad")}.get(r.mS, ("Menunggu Manager", "b-wait"))
-    out = f"<span class='badge {m[1]}'>{m[0]}</span>"
-    if r.mS != "Ditolak":
-        out += "<span class='badge b-ok'>Terverifikasi FRA</span>" if r.fS == "Verified" else "<span class='badge b-wait'>Menunggu FRA</span>"
-    kind = {"drop": "Drop ke store lain", "tambahan": "Setoran tambahan"}.get(r.kind)
-    return out + (f"<span class='badge b-info'>{kind}</span>" if kind else "")
-
-
-def main():
-    st.set_page_config(page_title="Setoran Omset Cash", layout="wide", initial_sidebar_state="collapsed")
-    st.markdown(CSS, unsafe_allow_html=True)
-    today = datetime.now(TZ).date()
-
-    S = prep_setoran(read_tab("Data Setoran"))
-    P = prep_pickup(read_tab("Data Pickup"))
-    names = store_names()
-    if S.empty and P.empty:
-        st.error("Data tidak dapat dibaca. Pastikan Google Sheet dibagikan dengan akses 'Siapa saja yang memiliki link' (Viewer).")
+if mode.startswith("Otomatis"):
+    if not pickup_days:
+        st.warning("Pilih minimal satu hari pick up pada menu pengaturan.")
         st.stop()
 
-    st.markdown(f"<div class='top'><img src='{LOGO}'><div><h1>Setoran Omset Cash</h1><p>Monitoring setoran omset dan pick up seluruh store</p></div></div>", unsafe_allow_html=True)
+    dates = pickup_dates(pickup_days)
+    idx_latest = len(dates) - 1
 
-    c1, c2, c3, c4 = st.columns([2.2, 2.2, 2.2, 0.8])
-    mode = c1.radio("Periode pengecekan", ["Periode pick up terakhir", "Periode berjalan", "Pilih manual"], horizontal=False)
-    manual = None
-    if mode == "Pilih manual":
-        v = c2.date_input("Rentang tanggal", value=(today - timedelta(days=6), today))
-        manual = (v[0], v[1]) if isinstance(v, (tuple, list)) and len(v) == 2 else (v, v) if isinstance(v, date) else None
-        if not manual:
-            c2.info("Pilih tanggal akhir.")
-            st.stop()
-    codes = sorted(set(S["store"]) | set(P["store"]) | set(names)) if not S.empty or not P.empty else []
-    label = lambda k: f"{k} - {names[k]}" if names.get(k) else k
-    pick = c3.selectbox("Store", ["Semua Store"] + codes, format_func=lambda k: k if k == "Semua Store" else label(k))
-    c4.write("")
-    if c4.button("Muat ulang"):
-        st.cache_data.clear()
-        st.rerun()
-    only = None if pick == "Semua Store" else pick
-    orng, prng, plabel = periods(today, mode, manual)
+    c1, c2, c3, _ = st.columns([1.1, 1.1, 1, 4])
+    if c1.button("Periode sebelumnya"):
+        st.session_state.offset -= 1
+    if c2.button("Periode berikutnya"):
+        st.session_state.offset += 1
+    if c3.button("Terbaru"):
+        st.session_state.offset = 0
+    st.session_state.offset = max(-(idx_latest - 1), min(0, st.session_state.offset))
 
-    rows = summarize(S, P, orng, prng, only)
-    tot = {k: sum(r[k] for r in rows.values()) for k in ("omset", "drop_in", "pickup", "drop", "tambah", "trx", "tunggu_m", "tunggu_f", "selisih")}
+    idx = idx_latest + st.session_state.offset
+    pickup, prev_pickup = dates[idx], dates[idx - 1]
+    if include_pickup_day:
+        start, end = prev_pickup + timedelta(days=1), pickup
+    else:
+        start, end = prev_pickup, pickup - timedelta(days=1)
+    judul_pickup = f"Pick up {HARI[pickup.weekday()]}, {tgl_id(pickup)}"
+else:
+    c1, c2, _ = st.columns([1, 1, 3])
+    start = c1.date_input("Dari tanggal", date.today() - timedelta(days=3))
+    end = c2.date_input("Sampai tanggal", date.today())
+    judul_pickup = "Periode manual"
+
+# =====================================================
+# FILTER DATA
+# =====================================================
+d = df[(df[COL_TANGGAL] >= start) & (df[COL_TANGGAL] <= end)].copy()
+d = d[d[COL_STATUS_MGR].str.lower() != "ditolak"]
+drops = d[d["is_drop"]]
+if not include_drop:
+    d = d[~d["is_drop"]]
+
+kode_list = sorted(d[COL_STORE].unique())
+label_map = {k: f"{k} - {nama_store(k)}" if nama_store(k) != "-" else k for k in kode_list}
+pilih = st.multiselect(
+    "Filter toko (kosongkan untuk semua toko)",
+    options=kode_list,
+    format_func=lambda k: label_map.get(k, k),
+)
+if pilih:
+    d = d[d[COL_STORE].isin(pilih)]
+    drops = drops[drops[COL_STORE].isin(pilih)]
+
+if d.empty:
+    st.info("Belum ada data setoran pada periode ini.")
     st.markdown(
-        f"<div class='hero'><div class='l'>Total Nominal Pick up</div><div class='v'>{rp(tot['pickup'])}</div>"
-        f"<div class='s'>{E(plabel)} · {E(label(pick) if only else 'Semua store')} · {tot['trx']} transaksi pick up</div></div>", unsafe_allow_html=True)
+        '<div class="footer">Powered and developed by <b>M Khadafi</b></div>',
+        unsafe_allow_html=True,
+    )
+    st.stop()
+
+# =====================================================
+# PERHITUNGAN
+# =====================================================
+d["Verified"] = d["Total"].where(d[COL_STATUS_FIN].str.lower() == "verified", 0)
+
+ringkas = (
+    d.groupby(COL_STORE, as_index=False)
+    .agg(
+        Pagi=(COL_PAGI, "sum"),
+        Siang=(COL_SIANG, "sum"),
+        Total=("Total", "sum"),
+        Verified=("Verified", "sum"),
+        Hari_Terisi=(COL_TANGGAL, "nunique"),
+    )
+    .sort_values("Total", ascending=False)
+    .reset_index(drop=True)
+)
+ringkas["Belum Verified"] = ringkas["Total"] - ringkas["Verified"]
+jumlah_hari = (end - start).days + 1
+ringkas["Hari Kurang"] = (jumlah_hari - ringkas["Hari_Terisi"]).clip(lower=0)
+
+total_pickup = ringkas["Total"].sum()
+total_pagi = ringkas["Pagi"].sum()
+total_siang = ringkas["Siang"].sum()
+total_verified = ringkas["Verified"].sum()
+total_belum = ringkas["Belum Verified"].sum()
+
+# =====================================================
+# MENU UTAMA: TOTAL NOMINAL PICK UP
+# =====================================================
+st.markdown(
+    f"""
+    <div class="hero">
+      <div class="label">Total Nominal Pick Up</div>
+      <div class="amount">{rp(total_pickup)}</div>
+      <div class="meta"><b>{esc(judul_pickup)}</b> &nbsp;|&nbsp;
+        Periode data {tgl_id(start)} s/d {tgl_id(end)} ({jumlah_hari} hari) &nbsp;|&nbsp;
+        <b>{len(ringkas)}</b> toko</div>
+      <div class="split">
+        {badge("Terverifikasi Finance: " + rp(total_verified), "b-ok")}
+        {badge("Menunggu verifikasi: " + rp(total_belum), "b-wait" if total_belum else "b-neutral")}
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+k1, k2, k3, k4 = st.columns(4)
+for col, label, value in [
+    (k1, "Setoran Pagi", rp(total_pagi)),
+    (k2, "Setoran Siang", rp(total_siang)),
+    (k3, "Jumlah Toko", str(len(ringkas))),
+    (k4, "Toko Belum Lengkap", str(int((ringkas["Hari Kurang"] > 0).sum()))),
+]:
+    col.markdown(
+        f'<div class="kpi"><div class="k">{label}</div><div class="v">{value}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+# =====================================================
+# RINCIAN
+# =====================================================
+st.markdown('<div class="section-title">Rincian</div>', unsafe_allow_html=True)
+tab_toko, tab_hari, tab_drop = st.tabs(["Per Toko", "Per Hari", "Titipan (Drop)"])
+
+with tab_toko:
+    rows = []
+    for i, r in ringkas.iterrows():
+        status = ""
+        if r["Hari Kurang"] > 0:
+            status += badge(f"Kurang {int(r['Hari Kurang'])} hari", "b-miss") + " "
+        if r["Belum Verified"] > 0:
+            status += badge("Menunggu verifikasi", "b-wait")
+        elif r["Hari Kurang"] == 0:
+            status += badge("Lengkap", "b-ok")
+        rows.append(
+            [
+                i + 1,
+                esc(r[COL_STORE]),
+                esc(nama_store(r[COL_STORE])),
+                num(r["Pagi"]),
+                num(r["Siang"]),
+                num(r["Total"]),
+                status,
+            ]
+        )
     st.markdown(
-        "<div class='cards'>"
-        f"<div class='card'><div class='l'>Total Setoran Omset</div><div class='v'>{rp(tot['omset'])}</div></div>"
-        f"<div class='card'><div class='l'>Drop ke Store Lain</div><div class='v'>{rp(tot['drop'])}</div></div>"
-        f"<div class='card'><div class='l'>Setoran Tambahan</div><div class='v'>{rp(tot['tambah'])}</div></div>"
-        f"<div class='card'><div class='l'>Selisih Periode</div><div class='v'>{rp(tot['selisih'])}</div></div>"
-        f"<div class='card'><div class='l'>Menunggu Manager / FRA</div><div class='v'>{tot['tunggu_m']} / {tot['tunggu_f']}</div></div>"
-        "</div>", unsafe_allow_html=True)
+        html_table(
+            ["No", "Kode", "Nama Store", "Setoran Pagi", "Setoran Siang", "Total Pick Up", "Status"],
+            rows,
+            num_cols=(3, 4, 5),
+            strong_cols=(2, 5),
+            footer=["", "", "TOTAL", num(total_pagi), num(total_siang), num(total_pickup), ""],
+        ),
+        unsafe_allow_html=True,
+    )
+    exp = ringkas.copy()
+    exp.insert(1, "Nama Store", exp[COL_STORE].map(nama_store))
+    st.download_button(
+        "Unduh rincian (CSV)",
+        exp.to_csv(index=False).encode("utf-8"),
+        file_name=f"pickup_{start}_{end}.csv",
+        mime="text/csv",
+    )
 
-    # rincian per store
-    st.markdown("<h3 class='sec'>Rincian per Store</h3>", unsafe_allow_html=True)
-    lst = sorted(rows.values(), key=lambda x: -x["pickup"])
-    lst = [x for x in lst if any(x[k] for k in ("omset", "pickup", "drop", "tambah", "drop_in"))]
-    cols = [(lambda r: f"<b>{E(r['store'])}</b><br><span style='color:#64748b'>{E(names.get(r['store'], ''))}</span>", "Store", ""),
-            (lambda r: rp(r["omset"]), "Setoran Omset", "n"), (lambda r: f"<b>{rp(r['pickup'])}</b>", "Pick up", "n"),
-            (lambda r: rp(r["drop"]), "Drop", "n"), (lambda r: rp(r["tambah"]), "Tambahan", "n"),
-            (lambda r: rp(r["selisih"]), "Selisih", "n"), (lambda r: str(r["trx"]), "Transaksi", "n"),
-            (lambda r: str(r["tunggu_m"]), "Tunggu Manager", "n"), (lambda r: str(r["tunggu_f"]), "Tunggu FRA", "n")]
-    st.markdown(table(lst, cols, "Belum ada data pada periode ini."), unsafe_allow_html=True)
+harian = (
+    d.groupby([COL_TANGGAL, COL_STORE], as_index=False)
+    .agg(
+        Pagi=(COL_PAGI, "sum"),
+        Siang=(COL_SIANG, "sum"),
+        Total=("Total", "sum"),
+        Status=(COL_STATUS_FIN, "first"),
+        FotoPagi=(COL_FOTO_PAGI, first_filled),
+        FotoSiang=(COL_FOTO_SIANG, first_filled),
+        FotoBukti=(COL_FOTO_BUKTI, first_filled),
+        Tipe=(COL_TIPE, first_filled),
+    )
+    .sort_values([COL_TANGGAL, COL_STORE])
+)
 
-    # rincian transaksi + foto
-    st.markdown("<h3 class='sec'>Rincian Transaksi Pick up dan Foto Bukti</h3>", unsafe_allow_html=True)
-    f1, f2, f3, f4 = st.columns(4)
-    kf = f1.selectbox("Jenis", ["Semua", "Pick up vendor", "Drop", "Tambahan"])
-    sf = f2.selectbox("Status", ["Semua", "Menunggu Manager", "Disetujui Manager", "Menunggu FRA", "Terverifikasi FRA", "Ditolak"])
-    show = f3.toggle("Tampilkan foto", value=True)
-    items = P[within(P["tgl"], prng)] if not P.empty else P
-    if not items.empty:
-        if only:
-            items = items[items["store"] == only]
-        items = items[items["kind"].isin({"Pick up vendor": ["pickup"], "Drop": ["drop"], "Tambahan": ["tambahan"]}.get(kf, ["pickup", "drop", "tambahan"]))]
-        items = {
-            "Menunggu Manager": items[items["mS"] == "Menunggu"], "Disetujui Manager": items[items["mS"] == "Verified"],
-            "Menunggu FRA": items[(items["mS"] == "Verified") & (items["fS"] != "Verified")],
-            "Terverifikasi FRA": items[items["fS"] == "Verified"], "Ditolak": items[items["mS"] == "Ditolak"],
-        }.get(sf, items)
-        items = items.sort_values(["tgl", "waktu"], ascending=False)
-    n = len(items)
-    pages = max(1, math.ceil(n / PER_PAGE))
-    page = f4.number_input("Halaman", min_value=1, max_value=pages, value=1, step=1)
-    st.caption(f"{n} transaksi · halaman {page} dari {pages}")
-    if n == 0:
-        st.markdown("<div class='card'>Belum ada transaksi pick up pada periode ini.</div>", unsafe_allow_html=True)
-    for r in items.iloc[(page - 1) * PER_PAGE: page * PER_PAGE].itertuples():
-        with st.container(border=True):
-            a, b = st.columns([3, 2]) if show else (st.container(), None)
-            a.markdown(
-                f"<div class='item'><div class='h'>{E(label(r.store))} · {E(fdate(r.tgl) if r.tgl else '-')}</div>"
-                f"<div class='a'>{'+ ' if r.kind == 'tambahan' else ''}{rp(r.jml)}</div>{badges(r)}"
-                f"<div class='m'>{E(r.vendor)}<br>Diinput oleh {E(r.by)}{(' · Manager: ' + E(r.mBy)) if r.mBy else ''}{(' · FRA: ' + E(r.fBy)) if r.fBy else ''}</div></div>",
-                unsafe_allow_html=True)
-            if b is not None:
-                with b:
-                    show_photo(r.foto)
+with tab_hari:
+    rows = []
+    for _, r in harian.iterrows():
+        st_fin = r["Status"].lower()
+        kind = "b-ok" if st_fin == "verified" else "b-wait"
+        rows.append(
+            [
+                esc(f"{HARI[r[COL_TANGGAL].weekday()]}, {r[COL_TANGGAL]:%d-%m-%Y}"),
+                esc(r[COL_STORE]),
+                esc(nama_store(r[COL_STORE])),
+                num(r["Pagi"]),
+                num(r["Siang"]),
+                num(r["Total"]),
+                badge(r["Status"] or "Menunggu", kind),
+                foto_cell(r),
+            ]
+        )
+    st.markdown(
+        html_table(
+            ["Tanggal", "Kode", "Nama Store", "Setoran Pagi", "Setoran Siang", "Total", "Status Finance", "Foto Bukti"],
+            rows,
+            num_cols=(3, 4, 5),
+            strong_cols=(2,),
+        ),
+        unsafe_allow_html=True,
+    )
 
-    # rincian setoran harian + foto
-    with st.expander("Rincian Setoran Harian dan Foto Bukti Omset"):
-        sd = S[within(S["tgl"], orng) & ~S["dropin"]] if not S.empty else S
-        if only and not sd.empty:
-            sd = sd[sd["store"] == only]
-        sd = sd.sort_values(["tgl", "store"], ascending=False) if not sd.empty else sd
-        srows = [r for r in sd.itertuples()]
-        scols = [(lambda r: f"<b>{E(r.store)}</b><br><span style='color:#64748b'>{E(names.get(r.store, ''))}</span>", "Store", ""),
-                 (lambda r: E(fdate(r.tgl) if r.tgl else "-"), "Tanggal", ""), (lambda r: E(r.cashier), "Cashier", ""),
-                 (lambda r: rp(r.pagi), "Pagi", "n"), (lambda r: rp(r.siang), "Siang", "n"), (lambda r: f"<b>{rp(r.total)}</b>", "Total", "n"),
-                 (lambda r: {"Verified": "Disetujui", "Ditolak": "Ditolak"}.get(r.mS, "Menunggu") + " / " + ("Terverifikasi" if r.fS == "Verified" else "Menunggu"), "Manager / FRA", "")]
-        st.markdown(table(srows[:300], scols, "Belum ada setoran pada periode ini."), unsafe_allow_html=True)
-        if srows:
-            opt = srows[:300]
-            idx = st.selectbox("Lihat foto bukti setoran", range(len(opt)), format_func=lambda i: f"{opt[i].store} · {fdate(opt[i].tgl) if opt[i].tgl else '-'} · {opt[i].cashier}")
-            r = opt[idx]
-            ph = [("Pagi" if r.tipe != "full" else "Full", r.fotoPagi or r.foto), ("Siang", r.fotoSiang)]
-            cc = st.columns(2)
-            for c, (lbl, u) in zip(cc, ph):
-                if u or lbl != "Siang":
-                    with c:
-                        st.markdown(f"**{lbl}**")
-                        show_photo(u)
+with tab_drop:
+    if drops.empty:
+        st.info("Tidak ada titipan (Drop) pada periode ini.")
+    else:
+        t = (
+            drops.groupby([COL_STORE, "Asal Drop"], as_index=False)["Total"]
+            .sum()
+            .sort_values("Total", ascending=False)
+        )
+        rows = [
+            [
+                esc(r[COL_STORE]),
+                esc(nama_store(r[COL_STORE])),
+                esc(r["Asal Drop"]),
+                esc(nama_store(r["Asal Drop"])),
+                num(r["Total"]),
+            ]
+            for _, r in t.iterrows()
+        ]
+        st.markdown(
+            html_table(
+                ["Kode Penerima", "Nama Penerima", "Kode Asal", "Nama Asal", "Nominal"],
+                rows,
+                num_cols=(4,),
+                strong_cols=(1, 4),
+                footer=["", "", "", "TOTAL", num(t["Total"].sum())],
+            ),
+            unsafe_allow_html=True,
+        )
+        st.caption("Titipan adalah nominal dari toko asal yang disetorkan melalui toko penerima.")
 
-    st.markdown("<div class='foot'>Powered and developed by M Khadafi</div>", unsafe_allow_html=True)
+# =====================================================
+# ASSISTEN M KHADAFI (AI)
+# =====================================================
+st.markdown('<div class="section-title">Asisten</div>', unsafe_allow_html=True)
+st.markdown(
+    """
+    <div class="ai-card">
+      <div class="t">Assisten M Khadafi</div>
+      <div class="s">Tanyakan data setoran pada periode yang sedang ditampilkan.</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
+if not get_secret("ANTHROPIC_API_KEY"):
+    st.info("Assisten M Khadafi belum aktif. Isi ANTHROPIC_API_KEY pada Secrets Streamlit untuk mengaktifkan.")
+else:
+    with st.form("form_ai", clear_on_submit=False):
+        tanya = st.text_input(
+            "Pertanyaan",
+            placeholder="Contoh: toko mana yang setoran siangnya paling rendah?",
+            label_visibility="collapsed",
+        )
+        kirim = st.form_submit_button("Tanya Assisten")
 
-if __name__ == "__main__":
-    main()
+    if kirim and tanya.strip():
+        import anthropic
+
+        ringkas_ai = ringkas.copy()
+        ringkas_ai.insert(1, "Nama Store", ringkas_ai[COL_STORE].map(nama_store))
+        harian_ai = harian.drop(columns=["FotoPagi", "FotoSiang", "FotoBukti", "Tipe"]).copy()
+        harian_ai["Nama Store"] = harian_ai[COL_STORE].map(nama_store)
+        konteks = (
+            f"Periode: {start} s/d {end}. Total pick up: {rp(total_pickup)}.\n"
+            "RINGKASAN PER TOKO (CSV):\n" + ringkas_ai.head(100).to_csv(index=False)
+            + "\nRINCIAN PER HARI (CSV):\n" + harian_ai.head(300).to_csv(index=False)
+        )
+        model = get_secret("ANTHROPIC_MODEL", DEFAULT_MODEL)
+        try:
+            client = anthropic.Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
+            with st.spinner("Assisten M Khadafi sedang menganalisa..."):
+                res = client.messages.create(
+                    model=model,
+                    max_tokens=1000,
+                    system=(
+                        "Anda adalah Assisten M Khadafi, asisten analisa setoran omset toko. "
+                        "Jawab dalam Bahasa Indonesia, ringkas, profesional, hanya berdasarkan data yang diberikan. "
+                        "Sebut nama store bersama kodenya bila tersedia. Jika data tidak cukup, katakan dengan jelas."
+                    ),
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": f"{konteks}\n\nPertanyaan: {tanya.strip()}",
+                        }
+                    ],
+                )
+            jawaban = "".join(b.text for b in res.content if getattr(b, "type", "") == "text")
+            st.markdown(f'<div class="ai-answer">{esc(jawaban).replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
+        except anthropic.APIStatusError as e:
+            pesan = getattr(e, "message", str(e))
+            if "credit balance" in pesan.lower():
+                st.error("Saldo kredit API Anthropic habis. Lakukan top up di console.anthropic.com (menu Billing).")
+            else:
+                st.error(f"Permintaan ke AI ditolak (kode {e.status_code}): {pesan}")
+        except Exception as e:
+            st.error(f"Terjadi kesalahan pada Assisten M Khadafi: {e}")
+
+# =====================================================
+# FOOTER
+# =====================================================
+st.markdown(
+    '<div class="footer">Powered and developed by <b>M Khadafi</b></div>',
+    unsafe_allow_html=True,
+)
