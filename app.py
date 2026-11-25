@@ -16,7 +16,7 @@ st.set_page_config(
 # =====================================================
 # KONFIGURASI
 # =====================================================
-SHEET_ID = "1bCvWOsmBIr568kzoNed3gzmPk8EnCAXwE0umdeDj5D4"
+SHEET_ID = "1B29iakSH1JlRbvaLXyLdPQbOxfcpJAkIPn5mNWwQv84"
 SHEET_NAME = "Data Setoran"
 MASTER_SHEET_NAME = "Master Store"
 PICKUP_SHEET_NAME = "Data Pickup"
