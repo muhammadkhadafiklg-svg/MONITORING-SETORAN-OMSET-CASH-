@@ -17,6 +17,7 @@ st.set_page_config(
 # KONFIGURASI
 # =====================================================
 SHEET_ID = "1B29iakSH1JlRbvaLXyLdPQbOxfcpJAkIPn5mNWwQv84"
+OLD_SHEET_ID = "1bCvWOsmBIr568kzoNed3gzmPk8EnCAXwE0umdeDj5D4"
 SHEET_NAME = "Data Setoran"
 MASTER_SHEET_NAME = "Master Store"
 PICKUP_SHEET_NAME = "Data Pickup"
@@ -381,12 +382,12 @@ def load_store_names() -> dict:
 
 @st.cache_data(ttl=3600, show_spinner="Memuat foto...")
 def load_foto_db(pid: str):
-    """Foto yang tersimpan di tab Data Foto (dipecah per potongan, urut kolom Urut)."""
+    """Foto lama yang tersimpan di tab Data Foto pada spreadsheet arsip lama (urut kolom Urut)."""
     if not re.fullmatch(r"[0-9a-f]{12}", pid):
         return None
     tq = f"select C,D where A = '{pid}' order by C"
     url = (
-        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
+        f"https://docs.google.com/spreadsheets/d/{OLD_SHEET_ID}/gviz/tq"
         f"?tqx=out:csv&sheet={quote('Data Foto')}&tq={quote(tq)}"
     )
     try:
@@ -488,6 +489,7 @@ with st.expander("Pengaturan periode dan perhitungan"):
     )
     if st.button("Muat ulang data dari Google Sheet"):
         load_data.clear()
+        load_pickup.clear()
         load_store_names.clear()
         st.rerun()
     if not store_names:
